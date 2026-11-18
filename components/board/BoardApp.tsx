@@ -688,6 +688,85 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
   );
 }
 
+function ImportInventoryModal({ open, onClose, mode, items, wearerLocked, onImport }) {
+  const [itemId, setItemId] = useState("");
+  const [lookShape, setLookShape] = useState("aline");
+  const [category, setCategory] = useState(ACC_CATS[0].id);
+  useEffect(() => {
+    if (open) {
+      setItemId(items[0]?.id || "");
+      setLookShape("aline");
+      setCategory(ACC_CATS[0].id);
+    }
+  }, [open]);
+  if (!open) return null;
+  const submit = (e) => {
+    e.preventDefault();
+    if (!itemId) return;
+    if (mode === "look") onImport(itemId, { wearer: wearerLocked, look_shape: lookShape });
+    else onImport(itemId, { wearer: wearerLocked, category });
+    onClose();
+  };
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="从物品清单导入">
+        <div className="drawer-head">
+          <h3>从物品清单导入</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <form className="drawer-body" onSubmit={submit}>
+          {items.length === 0 ? (
+            <div className="empty-state">物品清单里没有可导入的物品了（都已关联造型或配饰）</div>
+          ) : (
+            <>
+              <div className="field">
+                <label>选择物品</label>
+                <select value={itemId} onChange={(e) => setItemId(e.target.value)}>
+                  {items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                      {i.price_usd ? ` · $${Number(i.price_usd).toLocaleString()}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {mode === "look" ? (
+                <div className="field">
+                  <label>剪影款式</label>
+                  <select value={lookShape} onChange={(e) => setLookShape(e.target.value)}>
+                    {LOOK_SHAPES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="field">
+                  <label>配饰类别</label>
+                  <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                    {ACC_CATS.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button className="btn btn-primary" type="submit" style={{ justifyContent: "center" }}>
+                导入
+              </button>
+            </>
+          )}
+        </form>
+      </div>
+    </>
+  );
+}
+
 function AddItemModal({ open, onClose, onCreate, events, tagSuggestions, showAssignee, defaultAssignee, suggestedTag }) {
   const profiles = useProfiles();
   const [title, setTitle] = useState("");
@@ -1843,6 +1922,9 @@ function Lookbook({ state }) {
 
   const [addLookOpenFor, setAddLookOpenFor] = useState(null);
   const [addAccOpen, setAddAccOpen] = useState(false);
+  const [importLookOpenFor, setImportLookOpenFor] = useState(null);
+  const [importAccOpen, setImportAccOpen] = useState(false);
+  const unlinkedInventory = state.inventory.filter((i) => !i.look_id && !i.accessory_id);
   const lookSel = useMultiSelect();
   const [priceRevealed, setPriceRevealed] = useState(() => new Set());
   const toggleLookPriceReveal = (id, e) => {
@@ -1899,9 +1981,14 @@ function Lookbook({ state }) {
           <h2 style={{ fontSize: 18 }}>{zoneLabel}</h2>
         </div>
         {state.me && (
-          <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setAddLookOpenFor(wearerKey)}>
-            <Icon name="plus" size={13} /> 添加造型
-          </button>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button className="btn btn-primary" onClick={() => setAddLookOpenFor(wearerKey)}>
+              <Icon name="plus" size={13} /> 添加造型
+            </button>
+            <button className="btn btn-ghost" onClick={() => setImportLookOpenFor(wearerKey)}>
+              <Icon name="upload" size={13} /> 从物品清单导入
+            </button>
+          </div>
         )}
         {zoneLooks.length === 0 ? (
           <div className="empty-state">还没有造型候选，用上面的框添加一个</div>
@@ -1987,9 +2074,14 @@ function Lookbook({ state }) {
               ))}
             </div>
             {state.me && (
-              <button className="btn btn-primary" style={{ marginBottom: 14 }} onClick={() => setAddAccOpen(true)}>
-                <Icon name="plus" size={13} /> 添加配饰
-              </button>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={() => setAddAccOpen(true)}>
+                  <Icon name="plus" size={13} /> 添加配饰
+                </button>
+                <button className="btn btn-ghost" onClick={() => setImportAccOpen(true)}>
+                  <Icon name="upload" size={13} /> 从物品清单导入
+                </button>
+              </div>
             )}
             <div className="acc-grid">
               {state.accessories
@@ -2226,6 +2318,22 @@ function Lookbook({ state }) {
           { key: "category", label: "类别", type: "select", options: ACC_CATS.map((c) => ({ value: c.id, label: c.name })) },
           { key: "price", label: "价格 (USD)", type: "number" },
         ]}
+      />
+      <ImportInventoryModal
+        open={!!importLookOpenFor}
+        onClose={() => setImportLookOpenFor(null)}
+        mode="look"
+        items={unlinkedInventory}
+        wearerLocked={importLookOpenFor}
+        onImport={(itemId, values) => state.importInventoryAsLook(itemId, values)}
+      />
+      <ImportInventoryModal
+        open={importAccOpen}
+        onClose={() => setImportAccOpen(false)}
+        mode="accessory"
+        items={unlinkedInventory}
+        wearerLocked={builderWearer}
+        onImport={(itemId, values) => state.importInventoryAsAccessory(itemId, values)}
       />
     </div>
   );
@@ -3128,7 +3236,45 @@ export default function BoardApp({ me: initialMe }) {
     const row = { id, name, category, wearer, price };
     setAccessories((as) => [...as, row]);
     await supabase.from("accessories").insert(row);
+    // Linked so it also shows up in 物品清单, same as a look candidate does.
+    const invId = crypto.randomUUID();
+    const invRow = {
+      id: invId, name, status: "pending", price_usd: price || 0, occasions: [],
+      channel: "", added_by: me.member_key, notes: "", accessory_id: id,
+    };
+    setInventory((is) => [...is, invRow]);
+    await supabase.from("inventory_items").insert(invRow);
     logActivity(`添加了配饰「${name}」`);
+  };
+  const importInventoryAsLook = async (inventoryId, { wearer, look_shape }) => {
+    if (!requireAuth()) return;
+    const item = inventory.find((i) => i.id === inventoryId);
+    if (!item) return;
+    const lookId = crypto.randomUUID();
+    const lookRow = {
+      id: lookId, name: item.name, wearer: wearer || "ch", look_shape: look_shape || "aline", added_by: me.member_key,
+      subtitle: "", price: item.price_usd || 0, silhouette: "", fabric: "", sheen: "",
+      availability: "", alteration: "", occasions: item.occasions || [], notes: item.notes || "",
+      is_private: item.is_private || false, owner: item.owner || me.member_key,
+    };
+    setLooks((ls) => [...ls, lookRow]);
+    const { data } = await supabase.from("looks").insert(lookRow).select().single();
+    if (data) setLooks((ls) => ls.map((l) => (l.id === lookId ? data : l)));
+    setInventory((is) => is.map((i) => (i.id === inventoryId ? { ...i, look_id: lookId } : i)));
+    await supabase.from("inventory_items").update({ look_id: lookId }).eq("id", inventoryId);
+    logActivity(`把物品「${item.name}」导入为造型候选`);
+  };
+  const importInventoryAsAccessory = async (inventoryId, { wearer, category }) => {
+    if (!requireAuth()) return;
+    const item = inventory.find((i) => i.id === inventoryId);
+    if (!item) return;
+    const accId = crypto.randomUUID();
+    const accRow = { id: accId, name: item.name, category: category || ACC_CATS[0].id, wearer: wearer || "ch", price: item.price_usd || 0 };
+    setAccessories((as) => [...as, accRow]);
+    await supabase.from("accessories").insert(accRow);
+    setInventory((is) => is.map((i) => (i.id === inventoryId ? { ...i, accessory_id: accId } : i)));
+    await supabase.from("inventory_items").update({ accessory_id: accId }).eq("id", inventoryId);
+    logActivity(`把物品「${item.name}」导入为配饰`);
   };
   const deleteAccessory = async (id) => {
     if (!requireAuth()) return;
@@ -3403,6 +3549,8 @@ export default function BoardApp({ me: initialMe }) {
     deleteLookCandidate,
     addAccessory,
     deleteAccessory,
+    importInventoryAsLook,
+    importInventoryAsAccessory,
     updateInventory,
     toggleInvOccasion,
     addInventoryItem,

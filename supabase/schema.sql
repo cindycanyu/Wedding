@@ -161,14 +161,16 @@ create table if not exists public.inventory_items (
   added_by text check (added_by in ('hs','ch')),
   notes text not null default '',
   look_id text references public.looks (id) on delete set null,
+  accessory_id text references public.accessories (id) on delete set null,
   updated_at timestamptz not null default now(),
   is_private boolean not null default false,
   owner text
 );
 
--- These two only do something on a project that already had this table
--- before "pending" and look_id existed; harmless no-ops on a fresh one.
+-- These only do something on a project that already had this table before
+-- "pending", look_id or accessory_id existed; harmless no-ops on a fresh one.
 alter table public.inventory_items add column if not exists look_id text references public.looks (id) on delete set null;
+alter table public.inventory_items add column if not exists accessory_id text references public.accessories (id) on delete set null;
 -- A private look's linked inventory row mirrors its privacy so the surprise
 -- doesn't leak through the 物品清单 tab. Backfill before tightening to not null.
 alter table public.inventory_items add column if not exists is_private boolean not null default false;

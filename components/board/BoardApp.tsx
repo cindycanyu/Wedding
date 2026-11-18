@@ -1197,10 +1197,6 @@ function Drawer({ selected, onClose, state }) {
           <DebouncedField value={n.location} onCommit={(v) => state.updateNode(id, { location: v })} />
         </div>
         <div className="field">
-          <label>负责人</label>
-          <DebouncedField value={n.responsible} onCommit={(v) => state.updateNode(id, { responsible: v })} placeholder="hs / ch / 或填写姓名" />
-        </div>
-        <div className="field">
           <label>执行细节 / 注意事项</label>
           <DebouncedField as="textarea" rows="3" value={n.notes} onCommit={(v) => state.updateNode(id, { notes: v })} />
         </div>
@@ -2668,9 +2664,6 @@ function RunOfShow({ state, evTab, setEvTab }) {
                   <div className="time tabular">{n.time_label}</div>
                   <div className="ttl">{n.title}</div>
                   <div className="loc">{n.location}</div>
-                  <div style={{ marginTop: 8 }}>
-                    <Avatar id={n.responsible} size={22} />
-                  </div>
                 </div>
               </div>
             ))}
@@ -2683,12 +2676,10 @@ function RunOfShow({ state, evTab, setEvTab }) {
         onClose={() => setAddOpen(false)}
         title={`添加环节 · ${ev?.name || ""}`}
         onCreate={(values) => state.addNode(evTab, values)}
-        initialValues={{ responsible: state.me?.member_key }}
         fields={[
           { key: "title", label: "标题", required: true, autoFocus: true },
           { key: "time_label", label: "时间" },
           { key: "location", label: "地点" },
-          { key: "responsible", label: "负责人", type: "select", options: [{ value: "hs", label: "H.S." }, { value: "ch", label: "C.H." }] },
           { key: "notes", label: "执行细节 / 注意事项", type: "textarea" },
         ]}
       />
@@ -3281,7 +3272,7 @@ export default function BoardApp({ me: initialMe }) {
     setRunOfShowNodes((ns) => ns.map((n) => (n.id === id ? { ...n, ...patch } : n)));
     await supabase.from("run_of_show_nodes").update(patch).eq("id", id);
   };
-  const addNode = async (eventId, { title, time_label, location, responsible, notes }) => {
+  const addNode = async (eventId, { title, time_label, location, notes }) => {
     if (!requireAuth()) return;
     const existing = nodesByEvent[eventId] || [];
     const sortOrder = existing.length ? Math.max(...existing.map((n) => n.sort_order)) + 1 : 1;
@@ -3289,7 +3280,7 @@ export default function BoardApp({ me: initialMe }) {
       .from("run_of_show_nodes")
       .insert({
         event_id: eventId, title, time_label: time_label || "", location: location || "",
-        responsible: responsible || me.member_key, notes: notes || "", sort_order: sortOrder,
+        responsible: me.member_key, notes: notes || "", sort_order: sortOrder,
       })
       .select()
       .single();

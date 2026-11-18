@@ -907,6 +907,17 @@ function Drawer({ selected, onClose, state }) {
   const profiles = useProfiles();
   if (!selected) return null;
   const { type, id } = selected;
+  // The item behind this drawer can disappear out from under it — most often
+  // its own delete button, whose optimistic state update re-renders this
+  // drawer before the mutator gets to call closeDrawer(). Render nothing
+  // instead of crashing on a missing-item lookup below.
+  const collectionByType = {
+    dress: state.looks, inventory: state.inventory, task: state.tasks,
+    node: state.runOfShowNodes, vendor: state.vendors, daily: state.dailyTasks, event: state.events,
+    look: state.savedLooks, tryon: state.tryonResults,
+  };
+  const coll = collectionByType[type];
+  if (coll && !coll.some((x) => x.id === id)) return null;
   let content = null,
     title = "",
     sub = "";

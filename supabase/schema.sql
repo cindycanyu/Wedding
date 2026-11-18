@@ -18,7 +18,11 @@ create table if not exists public.member_invites (
 insert into public.member_invites (email, member_key, name, bg_color, text_color) values
   ('REPLACE_WITH_HS_EMAIL@example.com', 'hs', 'H.S.', '#2B4C7E', '#FFFFFF'),
   ('REPLACE_WITH_CH_EMAIL@example.com', 'ch', 'C.H.', '#D9B98C', '#211A12')
-on conflict (email) do nothing;
+on conflict (member_key) do update set
+  email = excluded.email,
+  name = excluded.name,
+  bg_color = excluded.bg_color,
+  text_color = excluded.text_color;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -52,6 +56,14 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Backfill: anyone who signed up before their email was correctly invited
+-- (or before this trigger existed) gets matched up now instead of staying stuck.
+insert into public.profiles (id, member_key, name, bg_color, text_color)
+select u.id, mi.member_key, mi.name, mi.bg_color, mi.text_color
+from auth.users u
+join public.member_invites mi on lower(trim(mi.email)) = lower(trim(u.email))
+on conflict (id) do nothing;
 
 -- Helper RLS policies key off this: null = "not an invited member", blocks everything.
 create or replace function public.current_member_key()
@@ -334,7 +346,8 @@ insert into public.inventory_items (id, name, status, price_usd, occasions, chan
   ('i8', '中式婚礼敬酒服', 'to_buy', 1200, array['cn'], '国内定制中', 'hs', '款式待确认，未付款。')
 on conflict (id) do nothing;
 
-insert into public.tasks (title, event_id, assignee, status, is_private, owner, notes) values
+insert into public.tasks (title, event_id, assignee, status, is_private, owner, notes)
+select * from (values
   ('给孙哥发正式邀请', 'sf', 'hs', 'todo', false, 'hs', '确认地址后邮寄纸质邀请函。'),
   ('准备证婚人感谢礼物', 'sf', 'hs', 'doing', true, 'hs', '打算送孙哥一块腕表，先别让他知道。'),
   ('安排领证后用餐地点', 'sf', 'ch', 'todo', false, 'ch', '市政厅附近，预订 6 人桌。'),
@@ -343,7 +356,8 @@ insert into public.tasks (title, event_id, assignee, status, is_private, owner, 
   ('准备给 C.H. 的求婚纪念惊喜礼物', null, 'hs', 'todo', true, 'hs', '刻字项链，预计下周到货。'),
   ('挑选并锁定主造型', null, 'ch', 'doing', false, 'ch', '倾向 Nova Cocotte，待最终确认下单。'),
   ('预订婚礼当天跟拍摄影师', 'us', 'hs', 'todo', false, 'hs', '对比 Rose & Light Studio 报价。')
-on conflict do nothing;
+) as seed(title, event_id, assignee, status, is_private, owner, notes)
+where not exists (select 1 from public.tasks);
 
 insert into public.vendors (id, name, category, quote, is_rush, deadline, contact, phone, email, event_id, next_step, log) values
   ('ve1', 'Rose & Light Studio', '摄影跟拍', 3200, false, '2026-12-10', 'Mia Chen', '+1 415-555-0148', 'mia@roselight.studio', 'us', '对比第二份报价后回复确认。', '11/10 发送需求说明；11/12 收到初版报价。'),
@@ -353,7 +367,8 @@ insert into public.vendors (id, name, category, quote, is_rush, deadline, contac
   ('ve5', '锦囍文化', '中式婚礼策划', 0, false, null, '王老师', '+86 138-0000-0000', 'wang@jinxi.cn', 'cn', '等待日期确定后再启动报价。', '11/01 初步沟通意向风格。')
 on conflict (id) do nothing;
 
-insert into public.run_of_show_nodes (event_id, time_label, title, location, responsible, notes, sort_order) values
+insert into public.run_of_show_nodes (event_id, time_label, title, location, responsible, notes, sort_order)
+select * from (values
   ('sf', '10:00', '市政厅四楼大厅集合', 'San Francisco City Hall · 4F Rotunda', 'hs', '提前 30 分钟到场安检。', 1),
   ('sf', '10:30', '领证仪式 · 孙哥证婚', '4F Rotunda', '孙哥', '仪式约 15 分钟，提前与孙哥核对誓词。', 2),
   ('sf', '11:15', '合影留念', '市政厅台阶 & 圆顶大厅', 'ch', '预留 45 分钟拍摄。', 3),
@@ -364,4 +379,5 @@ insert into public.run_of_show_nodes (event_id, time_label, title, location, res
   ('us', '18:30', '鸡尾酒会', '庭院区域', 'ch', '配轻食与live乐手。', 2),
   ('us', '19:30', '晚宴开始 + 致辞', '主宴会厅', 'hs', '致辞顺序：双方父母 → 新人。', 3),
   ('us', '21:00', '甜点 + 跳舞', '主宴会厅', 'ch', '甜品台 + DJ 收尾。', 4)
-on conflict do nothing;
+) as seed(event_id, time_label, title, location, responsible, notes, sort_order)
+where not exists (select 1 from public.run_of_show_nodes);

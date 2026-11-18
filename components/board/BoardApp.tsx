@@ -1097,49 +1097,47 @@ function Drawer({ selected, onClose, state }) {
             ))}
           </select>
         </div>
-        {it.status === "purchased" && (
-          <div className="field">
-            <label>实物照片</label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {photos.map((p) => (
-                <div key={p.id} style={{ position: "relative", width: 68, height: 68 }}>
-                  <img
-                    src={p.url}
-                    onClick={() => setZoomSrc(p.url)}
-                    style={{ width: 68, height: 68, borderRadius: 10, objectFit: "cover", cursor: "pointer", display: "block" }}
-                  />
-                  <button
-                    onClick={() => state.removeInventoryPhoto(p)}
-                    aria-label="删除照片"
-                    style={{
-                      position: "absolute",
-                      top: -6,
-                      right: -6,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      background: "var(--rose-dark)",
-                      border: "2px solid var(--cream)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Icon name="x" size={10} color="#fff" />
-                  </button>
-                </div>
-              ))}
-              <button
-                className="btn btn-ghost"
-                onClick={() => photoInputRef.current.click()}
-                style={{ width: 68, height: 68, borderRadius: 10, justifyContent: "center", padding: 0 }}
-              >
-                <Icon name="upload" size={18} />
-              </button>
-              <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoUpload} />
-            </div>
+        <div className="field">
+          <label>图片</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {photos.map((p) => (
+              <div key={p.id} style={{ position: "relative", width: 68, height: 68 }}>
+                <img
+                  src={p.url}
+                  onClick={() => setZoomSrc(p.url)}
+                  style={{ width: 68, height: 68, borderRadius: 10, objectFit: "cover", cursor: "pointer", display: "block" }}
+                />
+                <button
+                  onClick={() => state.removeInventoryPhoto(p)}
+                  aria-label="删除照片"
+                  style={{
+                    position: "absolute",
+                    top: -6,
+                    right: -6,
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    background: "var(--rose-dark)",
+                    border: "2px solid var(--cream)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon name="x" size={10} color="#fff" />
+                </button>
+              </div>
+            ))}
+            <button
+              className="btn btn-ghost"
+              onClick={() => photoInputRef.current.click()}
+              style={{ width: 68, height: 68, borderRadius: 10, justifyContent: "center", padding: 0 }}
+            >
+              <Icon name="upload" size={18} />
+            </button>
+            <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoUpload} />
           </div>
-        )}
+        </div>
         <div className="rowfields">
           <div className="field">
             <label>价格 (USD)</label>

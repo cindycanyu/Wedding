@@ -1635,7 +1635,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
       </div>
 
       <div className="section">
-        <div className="grid g3">
+        <div className="grid g3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
           {state.events.map((ev, i) => (
             <div
               key={ev.id}
@@ -1702,7 +1702,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
           <h2>婚礼当天流程</h2>
           <span className="meta">点击进入完整时间轴</span>
         </div>
-        <div className="grid g3">
+        <div className="grid g3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
           {state.events.map((ev) => {
             const nodes = state.nodesByEvent[ev.id] || [];
             const first = nodes[0];
@@ -1747,7 +1747,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
               : "点击数字跳转筛选"}
           </span>
         </div>
-        <div className="grid g3" style={{ alignItems: "start" }}>
+        <div className="grid g3" style={{ alignItems: "start", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
           <div className="card" style={{ cursor: "default", padding: 18 }}>
             <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
               <svg width="118" height="118" viewBox="0 0 118 118">
@@ -1794,7 +1794,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
               </div>
             </div>
           </div>
-          <div className="grid g4" style={{ gridColumn: "span 2" }}>
+          <div className="grid g4" style={{ gridColumn: "span 2", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
             {Object.entries(invCounts).map(([k, v]) => (
               <button
                 key={k}

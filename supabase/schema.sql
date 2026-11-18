@@ -38,7 +38,7 @@ as $$
 declare
   inv record;
 begin
-  select * into inv from public.member_invites where email = new.email;
+  select * into inv from public.member_invites where lower(trim(email)) = lower(trim(new.email));
   if inv.member_key is not null then
     insert into public.profiles (id, member_key, name, bg_color, text_color)
     values (new.id, inv.member_key, inv.name, inv.bg_color, inv.text_color)

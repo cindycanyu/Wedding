@@ -130,8 +130,17 @@ create table if not exists public.accessories (
   category text not null,
   name text not null,
   price numeric not null default 0,
-  wearer text not null check (wearer in ('hs','ch'))
+  wearer text not null check (wearer in ('hs','ch')),
+  is_private boolean not null default false,
+  owner text
 );
+alter table public.accessories add column if not exists is_private boolean not null default false;
+alter table public.accessories add column if not exists owner text;
+update public.accessories set owner = coalesce(owner, 'hs') where owner is null;
+alter table public.accessories alter column owner set default 'hs';
+alter table public.accessories alter column owner set not null;
+alter table public.accessories drop constraint if exists accessories_owner_check;
+alter table public.accessories add constraint accessories_owner_check check (owner in ('hs','ch'));
 
 create table if not exists public.saved_looks (
   id uuid primary key default gen_random_uuid(),
@@ -344,7 +353,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['events','accessories','saved_looks','tryon_results',
+  foreach t in array array['events','saved_looks','tryon_results',
     'inventory_photos','vendors','run_of_show_nodes']
   loop
     execute format('drop policy if exists "%s_rw" on public.%I', t, t);
@@ -368,15 +377,15 @@ begin
   end loop;
 end $$;
 
--- tasks, daily_tasks, looks and inventory_items: the privacy rule — a private
--- row is invisible and unwritable to anyone but its owner (including
--- anonymous visitors, for whom current_member_key() is null, so only
--- not_is_private rows ever match).
+-- tasks, daily_tasks, looks, inventory_items and accessories: the privacy
+-- rule — a private row is invisible and unwritable to anyone but its owner
+-- (including anonymous visitors, for whom current_member_key() is null, so
+-- only not_is_private rows ever match).
 do $$
 declare
   t text;
 begin
-  foreach t in array array['tasks','daily_tasks','looks','inventory_items']
+  foreach t in array array['tasks','daily_tasks','looks','inventory_items','accessories']
   loop
     execute format('drop policy if exists "%s_select" on public.%I', t, t);
     execute format(

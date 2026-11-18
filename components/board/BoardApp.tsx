@@ -1289,6 +1289,17 @@ function Drawer({ selected, onClose, state }) {
           <label>备注</label>
           <DebouncedField as="textarea" rows="3" value={it.notes} onCommit={(v) => state.updateInventory(id, { notes: v })} />
         </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={it.is_private}
+              onChange={(e) => state.updateInventory(id, { is_private: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+            仅自己可见（惊喜款，对方暂时看不到）
+          </label>
+        </div>
         {it.status !== "purchased" && (
           <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
         )}
@@ -2450,11 +2461,12 @@ function Lookbook({ state }) {
         onClose={() => setAddAccOpen(false)}
         title="添加配饰"
         onCreate={(values) => state.addAccessory({ ...values, wearer: builderWearer })}
-        initialValues={{ category: activeCat, price: 0 }}
+        initialValues={{ category: activeCat, price: 0, is_private: false }}
         fields={[
           { key: "name", label: "名称", required: true, autoFocus: true },
           { key: "category", label: "类别", type: "select", options: ACC_CATS.map((c) => ({ value: c.id, label: c.name })) },
           { key: "price", label: "价格 (USD)", type: "number" },
+          { key: "is_private", label: "仅自己可见（惊喜款，对方暂时看不到，含关联物品清单条目）", type: "checkbox" },
         ]}
       />
       <ImportInventoryModal
@@ -2567,6 +2579,15 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
                         <SelectCheckbox checked={selected.has(it.id)} />
                       </span>
                     )}
+                    {it.is_private && (
+                      <span
+                        className="sel-check"
+                        style={{ top: "auto", bottom: 10, left: 10, right: "auto", background: "var(--plum)" }}
+                        title="仅自己可见"
+                      >
+                        <Icon name="lock" size={12} color="#fff" />
+                      </span>
+                    )}
                     <OccChips occasions={it.occasions} />
                   </div>
                   <div className="card-body">
@@ -2603,7 +2624,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
         onCreate={(values) => state.addInventoryItem(values)}
         initialValues={{
           status: "to_buy", price_usd: 0, occasions: occFilter !== "all" ? [occFilter] : [],
-          create_look: false, wearer: "ch", look_shape: "aline",
+          create_look: false, wearer: "ch", look_shape: "aline", is_private: false,
         }}
         fields={[
           { key: "name", label: "名称", required: true, autoFocus: true },
@@ -2612,6 +2633,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           { key: "channel", label: "购买渠道" },
           { key: "occasions", label: "跨场合复用计划", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
           { key: "notes", label: "备注", type: "textarea" },
+          { key: "is_private", label: "仅自己可见（惊喜款，对方暂时看不到）", type: "checkbox" },
           { key: "create_look", label: "同时添加为造型候选（婚纱 / 礼服等）", type: "checkbox" },
           {
             key: "wearer", label: "造型适用对象", type: "select",
@@ -3373,10 +3395,10 @@ export default function BoardApp({ me: initialMe }) {
     logActivity(`删除了造型候选「${name}」`);
   };
 
-  const addAccessory = async ({ name, category, wearer, price }) => {
+  const addAccessory = async ({ name, category, wearer, price, is_private }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
-    const row = { id, name, category, wearer, price };
+    const row = { id, name, category, wearer, price, is_private: !!is_private, owner: me.member_key };
     setAccessories((as) => [...as, row]);
     await supabase.from("accessories").insert(row);
     // Linked so it also shows up in 物品清单, same as a look candidate does.
@@ -3384,6 +3406,7 @@ export default function BoardApp({ me: initialMe }) {
     const invRow = {
       id: invId, name, status: "pending", price_usd: price || 0, occasions: [],
       channel: "", added_by: me.member_key, notes: "", accessory_id: id,
+      is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, invRow]);
     await supabase.from("inventory_items").insert(invRow);
@@ -3412,7 +3435,10 @@ export default function BoardApp({ me: initialMe }) {
     const item = inventory.find((i) => i.id === inventoryId);
     if (!item) return;
     const accId = crypto.randomUUID();
-    const accRow = { id: accId, name: item.name, category: category || ACC_CATS[0].id, wearer: wearer || "ch", price: item.price_usd || 0 };
+    const accRow = {
+      id: accId, name: item.name, category: category || ACC_CATS[0].id, wearer: wearer || "ch", price: item.price_usd || 0,
+      is_private: item.is_private || false, owner: item.owner || me.member_key,
+    };
     setAccessories((as) => [...as, accRow]);
     await supabase.from("accessories").insert(accRow);
     setInventory((is) => is.map((i) => (i.id === inventoryId ? { ...i, accessory_id: accId } : i)));
@@ -3440,8 +3466,21 @@ export default function BoardApp({ me: initialMe }) {
 
   const updateInventory = async (id, patch) => {
     if (!requireAuth()) return;
+    const item = inventory.find((i) => i.id === id);
     setInventory((is) => is.map((i) => (i.id === id ? { ...i, ...patch } : i)));
     await supabase.from("inventory_items").update(patch).eq("id", id);
+    // Mirror privacy onto whichever look/accessory this item is linked to —
+    // they're the same thing, so hiding one hides both.
+    if ("is_private" in patch && item) {
+      if (item.look_id) {
+        setLooks((ls) => ls.map((l) => (l.id === item.look_id ? { ...l, is_private: patch.is_private } : l)));
+        await supabase.from("looks").update({ is_private: patch.is_private }).eq("id", item.look_id);
+      }
+      if (item.accessory_id) {
+        setAccessories((as) => as.map((a) => (a.id === item.accessory_id ? { ...a, is_private: patch.is_private } : a)));
+        await supabase.from("accessories").update({ is_private: patch.is_private }).eq("id", item.accessory_id);
+      }
+    }
   };
   const toggleInvOccasion = async (id, evId) => {
     if (!requireAuth()) return;
@@ -3450,7 +3489,7 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
-  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes, create_look, wearer, look_shape }) => {
+  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes, create_look, wearer, look_shape, is_private }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
     let lookId = null;
@@ -3460,7 +3499,7 @@ export default function BoardApp({ me: initialMe }) {
         id: lookId, name, wearer: wearer || "ch", look_shape: look_shape || "aline", added_by: me.member_key,
         subtitle: "", price: price_usd || 0, silhouette: "", fabric: "", sheen: "",
         availability: "", alteration: "", occasions: occasions || [], notes: notes || "",
-        is_private: false, owner: me.member_key,
+        is_private: !!is_private, owner: me.member_key,
       };
       setLooks((ls) => [...ls, lookRow]);
       const { data } = await supabase.from("looks").insert(lookRow).select().single();
@@ -3469,7 +3508,7 @@ export default function BoardApp({ me: initialMe }) {
     const row = {
       id, name, status: status || "to_buy", price_usd: price_usd || 0,
       occasions: occasions || [], channel: channel || "", added_by: me.member_key, notes: notes || "",
-      look_id: lookId,
+      look_id: lookId, is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, row]);
     await supabase.from("inventory_items").insert(row);

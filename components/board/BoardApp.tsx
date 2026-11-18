@@ -948,7 +948,7 @@ function Drawer({ selected, onClose, state }) {
     title = ev.name;
     sub = ev.en;
     const relTasks = state.tasks.filter((t) => (t.tags || []).includes(id));
-    const relInventory = state.inventory.filter((i) => i.occasions.includes(id));
+    const relInventory = state.inventory.filter((i) => i.occasions.includes(id) || i.occasions.includes("global"));
     const relVendors = state.vendors.filter((v) => v.event_id === id);
     content = (
       <>
@@ -2492,7 +2492,9 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
     });
   };
   const items = state.inventory.filter(
-    (i) => (invFilter === "all" || i.status === invFilter) && (occFilter === "all" || i.occasions.includes(occFilter))
+    (i) =>
+      (invFilter === "all" || i.status === invFilter) &&
+      (occFilter === "all" || i.occasions.includes(occFilter) || i.occasions.includes("global"))
   );
   const bulkDelete = async () => {
     if (selected.size === 0) return;

@@ -90,6 +90,18 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M5 5l14 14M19 5 5 19" />
         </svg>
       );
+    case "plus":
+      return (
+        <svg {...common}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      );
+    case "trash":
+      return (
+        <svg {...common}>
+          <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -111,6 +123,47 @@ const STATUS_META = {
 const STATUS_ICON = { purchased: "check", to_buy: "question" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
 const RATE = 7.2;
+const ACC_CATS = [
+  { id: "veil", name: "头纱" },
+  { id: "overskirt", name: "可拆裙摆" },
+  { id: "cape", name: "披肩外搭" },
+  { id: "gloves", name: "手套" },
+  { id: "jewelry", name: "珠宝" },
+  { id: "headpiece", name: "头饰" },
+  { id: "shoes", name: "鞋履" },
+  { id: "tie", name: "领带 / 领结" },
+  { id: "cufflink", name: "袖扣 / 口袋巾" },
+];
+const LOOK_SHAPES = [
+  { id: "mermaid", name: "美人鱼型" },
+  { id: "aline", name: "A 字型" },
+  { id: "ball", name: "公主蓬蓬裙" },
+  { id: "suit", name: "西装" },
+];
+const PHOTOS_BUCKET = "inventory-photos";
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d)) return null;
+  return Math.round((d - today) / 86400000);
+}
+function DeadlineBadge({ deadline, done }) {
+  if (done) return <span className="statuspill done">已完成</span>;
+  if (!deadline) return <span className="tmeta">无截止日期</span>;
+  const days = daysUntil(deadline);
+  if (days === null) return null;
+  if (days < 0) return <span className="countdown">已超期 {-days} 天</span>;
+  if (days === 0) return <span className="countdown">今天到期</span>;
+  if (days <= 3) return <span className="countdown">还剩 {days} 天</span>;
+  return (
+    <span className="tmeta tabular">
+      {deadline} 截止 · 还剩 {days} 天
+    </span>
+  );
+}
 
 /* ============ illustrations ============ */
 function Cover({ type }) {
@@ -197,12 +250,7 @@ function AccIllustration({ cat }) {
     veil: <path d="M50 18 q26 10 20 60 h-40 q-6 -50 20 -60z" fill="none" stroke={stroke} strokeWidth="1.5" />,
     overskirt: <path d="M20 30 h60 l10 55 h-80 z" fill="none" stroke={stroke} strokeWidth="1.5" />,
     cape: (
-      <path
-        d="M30 22 h40 l14 50 q-27 10 -34 2 q-7 8 -34 -2z"
-        fill="none"
-        stroke={stroke}
-        strokeWidth="1.5"
-      />
+      <path d="M30 22 h40 l14 50 q-27 10 -34 2 q-7 8 -34 -2z" fill="none" stroke={stroke} strokeWidth="1.5" />
     ),
     gloves: (
       <path
@@ -328,6 +376,45 @@ function OccChips({ occasions }) {
     </div>
   );
 }
+function QuickAddRow({ placeholder, onCreate, me, children, buttonLabel = "添加" }) {
+  const [title, setTitle] = useState("");
+  if (!me) return null;
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!title.trim()) return;
+        onCreate(title.trim());
+        setTitle("");
+      }}
+      style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}
+    >
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder={placeholder}
+        style={{ flex: "1 1 180px", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)", color: "var(--plum)" }}
+      />
+      {children}
+      <button className="btn btn-primary" type="submit">
+        <Icon name="plus" size={13} /> {buttonLabel}
+      </button>
+    </form>
+  );
+}
+function DeleteButton({ onDelete, label = "删除" }) {
+  return (
+    <button
+      className="btn btn-ghost"
+      style={{ color: "var(--critical)" }}
+      onClick={() => {
+        if (window.confirm("确定要删除吗？此操作无法撤销。")) onDelete();
+      }}
+    >
+      <Icon name="trash" size={14} color="var(--critical)" /> {label}
+    </button>
+  );
+}
 
 /* ============ Drawer ============ */
 function Drawer({ selected, onClose, state }) {
@@ -389,14 +476,34 @@ function Drawer({ selected, onClose, state }) {
           </div>
         </div>
         {ev.budget_tracking ? (
-          <div className="field">
-            <label>预算（已确认 / 预估）</label>
-            <p className="tabular" style={{ fontSize: 13 }}>
-              ${Number(ev.budget_confirmed).toLocaleString()} 已确认 · $
-              {Number(ev.budget_estimated).toLocaleString()} 预估待支出 · 预算上限 $
-              {Number(ev.budget_allocated).toLocaleString()}
-            </p>
-          </div>
+          <>
+            <div className="rowfields">
+              <div className="field">
+                <label>预算上限 (USD)</label>
+                <input
+                  type="number"
+                  value={ev.budget_allocated}
+                  onChange={(e) => state.updateEvent(id, { budget_allocated: +e.target.value || 0 })}
+                />
+              </div>
+              <div className="field">
+                <label>已确认支出 (USD)</label>
+                <input
+                  type="number"
+                  value={ev.budget_confirmed}
+                  onChange={(e) => state.updateEvent(id, { budget_confirmed: +e.target.value || 0 })}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label>预估待支出 (USD)</label>
+              <input
+                type="number"
+                value={ev.budget_estimated}
+                onChange={(e) => state.updateEvent(id, { budget_estimated: +e.target.value || 0 })}
+              />
+            </div>
+          </>
         ) : (
           <p className="note">该活动已关闭预算追踪，不展示任何花费金额与预算条，保持纯粹的仪式感氛围。</p>
         )}
@@ -419,6 +526,16 @@ function Drawer({ selected, onClose, state }) {
             <Avatar id={d.wearer} size={18} />
             {memberOf(profiles, d.wearer)?.name || d.wearer}
           </b>
+        </div>
+        <div className="field">
+          <label>剪影款式</label>
+          <select value={d.look_shape} onChange={(e) => state.updateLook(id, { look_shape: e.target.value })}>
+            {LOOK_SHAPES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="rowfields">
           <div className="field">
@@ -476,6 +593,7 @@ function Drawer({ selected, onClose, state }) {
             {memberOf(profiles, d.added_by)?.name || d.added_by}
           </b>
         </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteLookCandidate(id)} label="删除这个造型候选" />}
       </>
     );
   }
@@ -488,6 +606,10 @@ function Drawer({ selected, onClose, state }) {
     sub = meta.label;
     content = (
       <>
+        <div className="field">
+          <label>名称</label>
+          <input value={it.name} onChange={(e) => state.updateInventory(id, { name: e.target.value })} />
+        </div>
         <div className="field">
           <label>状态</label>
           <select value={it.status} onChange={(e) => state.updateInventory(id, { status: e.target.value })}>
@@ -581,6 +703,7 @@ function Drawer({ selected, onClose, state }) {
         {it.status !== "purchased" && (
           <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
         )}
+        {state.me && <DeleteButton onDelete={() => state.deleteInventoryItem(id)} />}
       </>
     );
   }
@@ -588,9 +711,13 @@ function Drawer({ selected, onClose, state }) {
   if (type === "task") {
     const t = state.tasks.find((x) => x.id === id);
     title = t.title;
-    sub = (t.event_id === "global" || !t.event_id ? "全局" : state.events.find((e) => e.id === t.event_id)?.en) || "";
+    sub = (!t.event_id || t.event_id === "global" ? "全局" : state.events.find((e) => e.id === t.event_id)?.en) || "";
     content = (
       <>
+        <div className="field">
+          <label>标题</label>
+          <input value={t.title} onChange={(e) => state.updateTask(id, { title: e.target.value })} />
+        </div>
         <div className="rowfields">
           <div className="field">
             <label>负责人</label>
@@ -614,6 +741,17 @@ function Drawer({ selected, onClose, state }) {
           </div>
         </div>
         <div className="field">
+          <label>所属活动</label>
+          <select value={t.event_id || "global"} onChange={(e) => state.updateTask(id, { event_id: e.target.value === "global" ? null : e.target.value })}>
+            <option value="global">全局</option>
+            {state.events.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -628,35 +766,40 @@ function Drawer({ selected, onClose, state }) {
           <label>备注</label>
           <textarea rows="4" value={t.notes} onChange={(e) => state.updateTask(id, { notes: e.target.value })} />
         </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteTask(id)} />}
       </>
     );
   }
 
   if (type === "node") {
-    const n = state.node;
+    const n = state.runOfShowNodes.find((x) => x.id === id);
     title = n.title;
     sub = n.time_label;
     content = (
       <>
-        <div className="kv">
-          <span className="k">时间</span>
-          <b>{n.time_label}</b>
+        <div className="rowfields">
+          <div className="field">
+            <label>时间</label>
+            <input value={n.time_label} onChange={(e) => state.updateNode(id, { time_label: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>标题</label>
+            <input value={n.title} onChange={(e) => state.updateNode(id, { title: e.target.value })} />
+          </div>
         </div>
-        <div className="kv">
-          <span className="k">地点</span>
-          <b>{n.location}</b>
+        <div className="field">
+          <label>地点</label>
+          <input value={n.location} onChange={(e) => state.updateNode(id, { location: e.target.value })} />
         </div>
-        <div className="kv">
-          <span className="k">负责人</span>
-          <b style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Avatar id={n.responsible} size={18} />
-            {memberOf(profiles, n.responsible)?.name || n.responsible}
-          </b>
+        <div className="field">
+          <label>负责人</label>
+          <input value={n.responsible} onChange={(e) => state.updateNode(id, { responsible: e.target.value })} placeholder="hs / ch / 或填写姓名" />
         </div>
         <div className="field">
           <label>执行细节 / 注意事项</label>
-          <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>{n.notes}</p>
+          <textarea rows="3" value={n.notes} onChange={(e) => state.updateNode(id, { notes: e.target.value })} />
         </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteNode(id)} label="删除这个环节" />}
       </>
     );
   }
@@ -669,6 +812,16 @@ function Drawer({ selected, onClose, state }) {
       <>
         <div className="rowfields">
           <div className="field">
+            <label>名称</label>
+            <input value={v.name} onChange={(e) => state.updateVendor(id, { name: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>类别</label>
+            <input value={v.category} onChange={(e) => state.updateVendor(id, { category: e.target.value })} />
+          </div>
+        </div>
+        <div className="rowfields">
+          <div className="field">
             <label>报价 (USD)</label>
             <input type="number" value={v.quote} onChange={(e) => state.updateVendor(id, { quote: +e.target.value || 0 })} />
           </div>
@@ -677,17 +830,41 @@ function Drawer({ selected, onClose, state }) {
             <input value={v.deadline || ""} onChange={(e) => state.updateVendor(id, { deadline: e.target.value })} />
           </div>
         </div>
-        <div className="kv">
-          <span className="k">联系人</span>
-          <b>{v.contact}</b>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={v.is_rush}
+              onChange={(e) => state.updateVendor(id, { is_rush: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+            加急
+          </label>
         </div>
-        <div className="kv">
-          <span className="k">电话</span>
-          <b>{v.phone}</b>
+        <div className="field">
+          <label>所属活动</label>
+          <select value={v.event_id || "global"} onChange={(e) => state.updateVendor(id, { event_id: e.target.value === "global" ? null : e.target.value })}>
+            <option value="global">全局</option>
+            {state.events.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="kv">
-          <span className="k">邮箱</span>
-          <b>{v.email}</b>
+        <div className="rowfields">
+          <div className="field">
+            <label>联系人</label>
+            <input value={v.contact} onChange={(e) => state.updateVendor(id, { contact: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>电话</label>
+            <input value={v.phone} onChange={(e) => state.updateVendor(id, { phone: e.target.value })} />
+          </div>
+        </div>
+        <div className="field">
+          <label>邮箱</label>
+          <input value={v.email} onChange={(e) => state.updateVendor(id, { email: e.target.value })} />
         </div>
         <div className="field">
           <label>沟通摘要</label>
@@ -697,6 +874,7 @@ function Drawer({ selected, onClose, state }) {
           <label>下一步行动</label>
           <textarea rows="2" value={v.next_step} onChange={(e) => state.updateVendor(id, { next_step: e.target.value })} />
         </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteVendor(id)} />}
       </>
     );
   }
@@ -734,6 +912,7 @@ function Drawer({ selected, onClose, state }) {
           <span className="k">适用场合</span>
           <b>{look.occasion ? state.events.find((e) => e.id === look.occasion)?.en : "未指定"}</b>
         </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteSavedLook(id)} label="删除这张造型卡" />}
       </>
     );
   }
@@ -753,6 +932,49 @@ function Drawer({ selected, onClose, state }) {
         <p className="note">
           这是模拟效果图占位展示。接入真实 Virtual Try-On API Key 后，此处将替换为基于上传照片生成的真实试穿效果图。
         </p>
+      </>
+    );
+  }
+
+  if (type === "daily") {
+    const d = state.dailyTasks.find((x) => x.id === id);
+    title = d.title;
+    sub = d.deadline || "无截止日期";
+    content = (
+      <>
+        <div className="field">
+          <label>标题</label>
+          <input value={d.title} onChange={(e) => state.updateDailyTask(id, { title: e.target.value })} />
+        </div>
+        <div className="rowfields">
+          <div className="field">
+            <label>截止日期</label>
+            <input type="date" value={d.deadline || ""} onChange={(e) => state.updateDailyTask(id, { deadline: e.target.value || null })} />
+          </div>
+          <div className="field">
+            <label>状态</label>
+            <select value={d.status} onChange={(e) => state.updateDailyTask(id, { status: e.target.value })}>
+              <option value="todo">待处理</option>
+              <option value="done">已完成</option>
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={d.is_private}
+              onChange={(e) => state.updateDailyTask(id, { is_private: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+            仅自己可见（私密）
+          </label>
+        </div>
+        <div className="field">
+          <label>备注</label>
+          <textarea rows="3" value={d.notes} onChange={(e) => state.updateDailyTask(id, { notes: e.target.value })} />
+        </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteDailyTask(id)} />}
       </>
     );
   }
@@ -789,11 +1011,12 @@ function Drawer({ selected, onClose, state }) {
 function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut }) {
   const tabs = [
     ["overview", "总览"],
-    ["lookbook", "造型"],
-    ["inventory", "物品清单"],
     ["tasks", "待办"],
+    ["inventory", "物品清单"],
+    ["lookbook", "造型"],
     ["runofshow", "当天流程"],
     ["vendors", "供应商 & 预算"],
+    ["daily", "Daily"],
   ];
   return (
     <div className="topbar">
@@ -820,12 +1043,20 @@ function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut }) {
           <Icon name={adminView ? "check" : "lock"} size={11} /> 管理员视图
         </button>
         <div className="identity">
-          <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
-            {me.name.slice(0, 1)}
-          </button>
-          <button className="signout-btn" onClick={onSignOut}>
-            退出登录
-          </button>
+          {me ? (
+            <>
+              <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
+                {me.name.slice(0, 1)}
+              </button>
+              <button className="signout-btn" onClick={onSignOut}>
+                退出登录
+              </button>
+            </>
+          ) : (
+            <a href="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
+              登录
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -1021,7 +1252,7 @@ function Lookbook({ state }) {
   const [wearerFilter, setWearerFilter] = useState("all");
   const [builderDress, setBuilderDress] = useState(state.looks[0]?.id);
   const builderWearer = state.looks.find((d) => d.id === builderDress)?.wearer;
-  const builderCats = state.accCats.filter((c) => state.accessories.some((a) => a.category === c.id && a.wearer === builderWearer));
+  const builderCats = ACC_CATS.filter((c) => state.accessories.some((a) => a.category === c.id && a.wearer === builderWearer));
   const [activeCat, setActiveCat] = useState(builderCats[0]?.id);
   useEffect(() => {
     if (!builderCats.find((c) => c.id === activeCat)) setActiveCat(builderCats[0]?.id);
@@ -1036,11 +1267,15 @@ function Lookbook({ state }) {
   const [generating, setGenerating] = useState(false);
   const fileRef = useRef();
 
+  const [newLookWearer, setNewLookWearer] = useState("ch");
+  const [newLookShape, setNewLookShape] = useState("aline");
+  const [newAccPrice, setNewAccPrice] = useState("");
+
   const toggleBuilderAcc = (aid) => setBuilderAcc((prev) => (prev.includes(aid) ? prev.filter((x) => x !== aid) : [...prev, aid]));
   const toggleTryonAcc = (aid) => setTryonAcc((prev) => (prev.includes(aid) ? prev.filter((x) => x !== aid) : [...prev, aid]));
 
   const saveLook = () => {
-    state.addLook({ lookId: builderDress, accessoryIds: builderAcc, occasion: lookOcc });
+    state.createSavedLook({ lookId: builderDress, accessoryIds: builderAcc, occasion: lookOcc });
     setBuilderAcc([]);
   };
 
@@ -1075,6 +1310,26 @@ function Lookbook({ state }) {
           <h2>造型候选</h2>
           <span className="meta">点击卡片查看版型 / 面料 / 周期详情</span>
         </div>
+        {state.me && (
+          <QuickAddRow
+            placeholder="新造型名称，比如 Juliet"
+            buttonLabel="添加造型"
+            me={state.me}
+            onCreate={(name) => state.addLookCandidate({ name, wearer: newLookWearer, lookShape: newLookShape })}
+          >
+            <select value={newLookWearer} onChange={(e) => setNewLookWearer(e.target.value)}>
+              <option value="ch">她的</option>
+              <option value="hs">他的</option>
+            </select>
+            <select value={newLookShape} onChange={(e) => setNewLookShape(e.target.value)}>
+              {LOOK_SHAPES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </QuickAddRow>
+        )}
         <div className="filterbar">
           <button className={"chip" + (wearerFilter === "all" ? " on" : "")} onClick={() => setWearerFilter("all")}>
             全部
@@ -1121,24 +1376,68 @@ function Lookbook({ state }) {
                 </button>
               ))}
             </div>
+            {state.me && (
+              <QuickAddRow
+                placeholder="新配饰名称"
+                buttonLabel="添加配饰"
+                me={state.me}
+                onCreate={(name) =>
+                  state.addAccessory({ name, category: activeCat, wearer: builderWearer, price: +newAccPrice || 0 })
+                }
+              >
+                <input
+                  type="number"
+                  placeholder="价格"
+                  value={newAccPrice}
+                  onChange={(e) => setNewAccPrice(e.target.value)}
+                  style={{ width: 90, border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)" }}
+                />
+              </QuickAddRow>
+            )}
             <div className="acc-grid">
               {state.accessories
                 .filter((a) => a.category === activeCat && a.wearer === builderWearer)
                 .map((a) => (
-                  <button key={a.id} className={"acc-card" + (builderAcc.includes(a.id) ? " sel" : "")} onClick={() => toggleBuilderAcc(a.id)}>
-                    {builderAcc.includes(a.id) && (
-                      <span className="sel-check">
-                        <Icon name="check" size={12} color="#fff" />
-                      </span>
+                  <div key={a.id} style={{ position: "relative" }}>
+                    <button className={"acc-card" + (builderAcc.includes(a.id) ? " sel" : "")} onClick={() => toggleBuilderAcc(a.id)}>
+                      {builderAcc.includes(a.id) && (
+                        <span className="sel-check">
+                          <Icon name="check" size={12} color="#fff" />
+                        </span>
+                      )}
+                      <div className="acc-cover">
+                        <AccIllustration cat={a.category} />
+                      </div>
+                      <div className="acc-info">
+                        <div className="nm">{a.name}</div>
+                        <div className="pr tabular">${a.price}</div>
+                      </div>
+                    </button>
+                    {state.me && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("删除这件配饰？")) state.deleteAccessory(a.id);
+                        }}
+                        aria-label="删除配饰"
+                        style={{
+                          position: "absolute",
+                          top: 6,
+                          left: 6,
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: "var(--rose-dark)",
+                          border: "2px solid var(--cream)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          zIndex: 3,
+                        }}
+                      >
+                        <Icon name="x" size={10} color="#fff" />
+                      </button>
                     )}
-                    <div className="acc-cover">
-                      <AccIllustration cat={a.category} />
-                    </div>
-                    <div className="acc-info">
-                      <div className="nm">{a.name}</div>
-                      <div className="pr tabular">${a.price}</div>
-                    </div>
-                  </button>
+                  </div>
                 ))}
             </div>
           </div>
@@ -1176,9 +1475,11 @@ function Lookbook({ state }) {
                 ))}
               </select>
             </div>
-            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={saveLook}>
-              另存为造型卡
-            </button>
+            {state.me && (
+              <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={saveLook}>
+                另存为造型卡
+              </button>
+            )}
           </div>
         </div>
 
@@ -1307,6 +1608,7 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
           <h2>物品与资产清单</h2>
           <span className="meta">未确认购买的物品不计入已购预算</span>
         </div>
+        <QuickAddRow placeholder="新物品名称" buttonLabel="添加物品" me={state.me} onCreate={(name) => state.addInventoryItem(name)} />
         <div className="filterbar">
           <button className={"chip" + (invFilter === "all" ? " on" : "")} onClick={() => setInvFilter("all")}>
             全部状态
@@ -1387,6 +1689,7 @@ function Tasks({ state }) {
           <h2>待办管理</h2>
           <span className="meta">私密任务仅创建者本人可见</span>
         </div>
+        <QuickAddRow placeholder="新待办标题" buttonLabel="添加待办" me={state.me} onCreate={(title) => state.addTask(title)} />
         <div className="filterbar">
           <button className={"chip" + (evFilter === "all" ? " on" : "")} onClick={() => setEvFilter("all")}>
             全部活动
@@ -1459,6 +1762,97 @@ function Tasks({ state }) {
   );
 }
 
+/* ============ Daily page ============ */
+function Daily({ state }) {
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const profiles = useProfiles();
+  const [newDeadline, setNewDeadline] = useState("");
+  const visible = state.dailyTasks.filter((t) => ownerFilter === "all" || t.owner === ownerFilter);
+  const sorted = [...visible].sort((a, b) => {
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  });
+  return (
+    <div className="wrap">
+      <div className="section">
+        <div className="section-head">
+          <h2>Daily</h2>
+          <span className="meta">跟婚礼无关的日常待办，一样支持私密和截止日期</span>
+        </div>
+        <QuickAddRow
+          placeholder="新的日常待办"
+          buttonLabel="添加"
+          me={state.me}
+          onCreate={(title) => {
+            state.addDailyTask({ title, deadline: newDeadline || null });
+            setNewDeadline("");
+          }}
+        >
+          <input
+            type="date"
+            value={newDeadline}
+            onChange={(e) => setNewDeadline(e.target.value)}
+            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)", color: "var(--plum)" }}
+          />
+        </QuickAddRow>
+        <div className="filterbar">
+          <button className={"chip" + (ownerFilter === "all" ? " on" : "")} onClick={() => setOwnerFilter("all")}>
+            全部
+          </button>
+          {profiles.map((m) => (
+            <button key={m.member_key} className={"chip" + (ownerFilter === m.member_key ? " on" : "")} onClick={() => setOwnerFilter(m.member_key)}>
+              {m.name}
+            </button>
+          ))}
+        </div>
+        <div className="tasklist">
+          {sorted.length === 0 && <div className="empty-state">没有日常待办</div>}
+          {sorted.map((t) => {
+            const done = t.status === "done";
+            return (
+              <div
+                key={t.id}
+                className="taskrow"
+                role="button"
+                tabIndex={0}
+                style={{ borderLeft: "6px solid " + (memberOf(profiles, t.owner)?.bg_color || "var(--line)") }}
+                onClick={() => state.openDrawer("daily", t.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") state.openDrawer("daily", t.id);
+                }}
+              >
+                <button
+                  className="checkdot"
+                  aria-label={done ? "标记为未完成" : "标记为已完成"}
+                  style={{ background: done ? "var(--good)" : "#fff", borderColor: done ? "var(--good)" : "var(--line)" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    state.toggleDailyTaskDone(t.id);
+                  }}
+                >
+                  {done && <Icon name="check" size={13} color="#fff" />}
+                </button>
+                <Avatar id={t.owner} />
+                <span className="ttitle" style={done ? { textDecoration: "line-through", opacity: 0.55 } : null}>
+                  {t.title}
+                </span>
+                {t.is_private && (
+                  <span className="lockdot">
+                    <Icon name="lock" size={14} />
+                  </span>
+                )}
+                <DeadlineBadge deadline={t.deadline} done={done} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============ Run of Show page ============ */
 function RunOfShow({ state, evTab, setEvTab }) {
   const nodes = state.nodesByEvent[evTab] || [];
@@ -1477,12 +1871,18 @@ function RunOfShow({ state, evTab, setEvTab }) {
             </button>
           ))}
         </div>
+        <QuickAddRow
+          placeholder="新环节标题"
+          buttonLabel="添加环节"
+          me={state.me}
+          onCreate={(title) => state.addNode(evTab, title)}
+        />
         {nodes.length === 0 ? (
           <div className="empty-state">还没有流程节点</div>
         ) : (
           <div className="timeline">
             {nodes.map((n) => (
-              <div key={n.id} className="tnode" onClick={() => state.openNode(n)}>
+              <div key={n.id} className="tnode" onClick={() => state.openDrawer("node", n.id)}>
                 <span className="dot">
                   <Icon name="pin" size={11} color="#fff" />
                 </span>
@@ -1505,14 +1905,6 @@ function RunOfShow({ state, evTab, setEvTab }) {
 }
 
 /* ============ Vendors & Budget page ============ */
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr + "T00:00:00");
-  if (isNaN(d)) return null;
-  return Math.round((d - today) / 86400000);
-}
 function VendorsBudget({ state }) {
   const [groupBy, setGroupBy] = useState("event");
   return (
@@ -1522,6 +1914,7 @@ function VendorsBudget({ state }) {
           <h2>供应商</h2>
           <span className="meta">点击卡片查看联系人与沟通记录</span>
         </div>
+        <QuickAddRow placeholder="新供应商名称" buttonLabel="添加供应商" me={state.me} onCreate={(name) => state.addVendor(name)} />
         <div className="grid g3">
           {state.vendors.map((v) => {
             const dleft = daysUntil(v.deadline);
@@ -1600,7 +1993,12 @@ function VendorsBudget({ state }) {
               const reserve = Math.max(allocated - confirmed - estimated, 0);
               const total = allocated || 1;
               return (
-                <div key={ev.id} className="eventrow">
+                <button
+                  key={ev.id}
+                  className="eventrow"
+                  style={{ width: "100%", textAlign: "left", border: "1px solid var(--line)", cursor: "pointer" }}
+                  onClick={() => state.openDrawer("event", ev.id)}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span className="name">{ev.name}</span>
                     <span className="nums tabular">
@@ -1612,7 +2010,8 @@ function VendorsBudget({ state }) {
                     <span style={{ width: (estimated / total) * 100 + "%", background: "var(--pending)" }} />
                     <span style={{ width: (reserve / total) * 100 + "%", background: "var(--reserve)" }} />
                   </div>
-                </div>
+                  <p className="note" style={{ marginTop: 8 }}>点击编辑预算数字</p>
+                </button>
               );
             })
           : ["造型配饰", "场地", "餐饮/花艺", "摄影", "其他"].map((cat, idx) => {
@@ -1639,26 +2038,14 @@ function VendorsBudget({ state }) {
   );
 }
 
-const ACC_CATS = [
-  { id: "veil", name: "头纱" },
-  { id: "overskirt", name: "可拆裙摆" },
-  { id: "cape", name: "披肩外搭" },
-  { id: "gloves", name: "手套" },
-  { id: "jewelry", name: "珠宝" },
-  { id: "headpiece", name: "头饰" },
-  { id: "shoes", name: "鞋履" },
-  { id: "tie", name: "领带 / 领结" },
-  { id: "cufflink", name: "袖扣 / 口袋巾" },
-];
-const PHOTOS_BUCKET = "inventory-photos";
-
 /* ============ App ============ */
-export default function BoardApp({ me }) {
+export default function BoardApp({ me: initialMe }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const me = initialMe;
 
   const [loading, setLoading] = useState(true);
-  const [profiles, setProfiles] = useState([me]);
+  const [profiles, setProfiles] = useState(me ? [me] : []);
   const [events, setEvents] = useState([]);
   const [looks, setLooks] = useState([]);
   const [accessories, setAccessories] = useState([]);
@@ -1669,37 +2056,37 @@ export default function BoardApp({ me }) {
   const [tasks, setTasks] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [runOfShowNodes, setRunOfShowNodes] = useState([]);
+  const [dailyTasks, setDailyTasks] = useState([]);
 
   const [tab, setTab] = useState("overview");
   const [rosTab, setRosTab] = useState("sf");
   const [invFilter, setInvFilter] = useState("all");
   const [adminView, setAdminView] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [node, setNode] = useState(null);
+
+  const requireAuth = useCallback(() => {
+    if (!me) {
+      router.push("/login");
+      return false;
+    }
+    return true;
+  }, [me, router]);
 
   const loadPhotos = useCallback(async () => {
     const { data: photoRows } = await supabase.from("inventory_photos").select("*").order("created_at");
-    if (!photoRows || photoRows.length === 0) {
-      setPhotosByItem({});
-      return;
-    }
-    const paths = photoRows.map((p) => p.storage_path);
-    const { data: signed } = await supabase.storage.from(PHOTOS_BUCKET).createSignedUrls(paths, 60 * 60);
-    const urlByPath = {};
-    (signed || []).forEach((s) => {
-      if (s.signedUrl) urlByPath[s.path] = s.signedUrl;
-    });
     const grouped = {};
-    photoRows.forEach((p) => {
-      const url = urlByPath[p.storage_path];
-      if (!url) return;
-      (grouped[p.item_id] ||= []).push({ id: p.id, storage_path: p.storage_path, url });
+    (photoRows || []).forEach((p) => {
+      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(p.storage_path);
+      (grouped[p.item_id] ||= []).push({ id: p.id, storage_path: p.storage_path, url: data.publicUrl });
     });
     setPhotosByItem(grouped);
   }, [supabase]);
 
   const loadAll = useCallback(async () => {
-    const [profilesRes, eventsRes, looksRes, accRes, savedRes, tryonRes, invRes, tasksRes, vendorsRes, nodesRes] = await Promise.all([
+    const [
+      profilesRes, eventsRes, looksRes, accRes, savedRes, tryonRes,
+      invRes, tasksRes, vendorsRes, nodesRes, dailyRes,
+    ] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*"),
       supabase.from("looks").select("*"),
@@ -1710,6 +2097,7 @@ export default function BoardApp({ me }) {
       supabase.from("tasks").select("*").order("updated_at", { ascending: false }),
       supabase.from("vendors").select("*"),
       supabase.from("run_of_show_nodes").select("*").order("sort_order"),
+      supabase.from("daily_tasks").select("*").order("deadline", { ascending: true, nullsFirst: false }),
     ]);
     if (profilesRes.data?.length) setProfiles(profilesRes.data);
     if (eventsRes.data) setEvents(eventsRes.data);
@@ -1721,6 +2109,7 @@ export default function BoardApp({ me }) {
     if (tasksRes.data) setTasks(tasksRes.data);
     if (vendorsRes.data) setVendors(vendorsRes.data);
     if (nodesRes.data) setRunOfShowNodes(nodesRes.data);
+    if (dailyRes.data) setDailyTasks(dailyRes.data);
     await loadPhotos();
     setLoading(false);
   }, [supabase, loadPhotos]);
@@ -1748,6 +2137,7 @@ export default function BoardApp({ me }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "vendors" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "run_of_show_nodes" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, scheduleReload)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer.current);
@@ -1763,34 +2153,91 @@ export default function BoardApp({ me }) {
 
   /* ---------- mutators: optimistic local update + Supabase write ---------- */
   const toggleBudgetTracking = async (id) => {
+    if (!requireAuth()) return;
     const ev = events.find((e) => e.id === id);
     const next = !ev.budget_tracking;
     setEvents((es) => es.map((e) => (e.id === id ? { ...e, budget_tracking: next } : e)));
     await supabase.from("events").update({ budget_tracking: next }).eq("id", id);
   };
+  const updateEvent = async (id, patch) => {
+    if (!requireAuth()) return;
+    setEvents((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    await supabase.from("events").update(patch).eq("id", id);
+  };
 
   const updateLook = async (id, patch) => {
+    if (!requireAuth()) return;
     setLooks((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     await supabase.from("looks").update(patch).eq("id", id);
   };
   const toggleLookOccasion = async (id, evId) => {
+    if (!requireAuth()) return;
     const look = looks.find((l) => l.id === id);
     const has = look.occasions.includes(evId);
     const occasions = has ? look.occasions.filter((o) => o !== evId) : [...look.occasions, evId];
     await updateLook(id, { occasions });
   };
+  const addLookCandidate = async ({ name, wearer, lookShape }) => {
+    if (!requireAuth()) return;
+    const id = crypto.randomUUID();
+    const row = {
+      id, name, wearer, look_shape: lookShape, added_by: me.member_key,
+      subtitle: "", price: 0, silhouette: "", fabric: "", sheen: "",
+      availability: "", alteration: "", occasions: [], notes: "",
+    };
+    setLooks((ls) => [...ls, row]);
+    const { data } = await supabase.from("looks").insert(row).select().single();
+    if (data) setLooks((ls) => ls.map((l) => (l.id === id ? data : l)));
+  };
+  const deleteLookCandidate = async (id) => {
+    if (!requireAuth()) return;
+    setLooks((ls) => ls.filter((l) => l.id !== id));
+    await supabase.from("looks").delete().eq("id", id);
+    closeDrawer();
+  };
+
+  const addAccessory = async ({ name, category, wearer, price }) => {
+    if (!requireAuth()) return;
+    const id = crypto.randomUUID();
+    const row = { id, name, category, wearer, price };
+    setAccessories((as) => [...as, row]);
+    await supabase.from("accessories").insert(row);
+  };
+  const deleteAccessory = async (id) => {
+    if (!requireAuth()) return;
+    setAccessories((as) => as.filter((a) => a.id !== id));
+    await supabase.from("accessories").delete().eq("id", id);
+  };
 
   const updateInventory = async (id, patch) => {
+    if (!requireAuth()) return;
     setInventory((is) => is.map((i) => (i.id === id ? { ...i, ...patch } : i)));
     await supabase.from("inventory_items").update(patch).eq("id", id);
   };
   const toggleInvOccasion = async (id, evId) => {
+    if (!requireAuth()) return;
     const item = inventory.find((i) => i.id === id);
     const has = item.occasions.includes(evId);
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
+  const addInventoryItem = async (name) => {
+    if (!requireAuth()) return;
+    const id = crypto.randomUUID();
+    const row = { id, name, status: "to_buy", price_usd: 0, occasions: [], channel: "", added_by: me.member_key, notes: "" };
+    setInventory((is) => [...is, row]);
+    await supabase.from("inventory_items").insert(row);
+  };
+  const deleteInventoryItem = async (id) => {
+    if (!requireAuth()) return;
+    const paths = (photosByItem[id] || []).map((p) => p.storage_path);
+    if (paths.length) await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
+    setInventory((is) => is.filter((i) => i.id !== id));
+    await supabase.from("inventory_items").delete().eq("id", id);
+    closeDrawer();
+  };
   const addInventoryPhotos = async (itemId, files) => {
+    if (!requireAuth()) return;
     for (const file of files) {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `${itemId}/${crypto.randomUUID()}.${ext}`;
@@ -1801,6 +2248,7 @@ export default function BoardApp({ me }) {
     await loadPhotos();
   };
   const removeInventoryPhoto = async (photo) => {
+    if (!requireAuth()) return;
     setPhotosByItem((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((k) => (next[k] = next[k].filter((p) => p.id !== photo.id)));
@@ -1811,20 +2259,75 @@ export default function BoardApp({ me }) {
   };
 
   const updateTask = async (id, patch) => {
+    if (!requireAuth()) return;
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     await supabase.from("tasks").update(patch).eq("id", id);
   };
   const toggleTaskDone = async (id) => {
+    if (!requireAuth()) return;
     const t = tasks.find((x) => x.id === id);
     await updateTask(id, { status: t.status === "done" ? "todo" : "done" });
   };
+  const addTask = async (title) => {
+    if (!requireAuth()) return;
+    const { data } = await supabase
+      .from("tasks")
+      .insert({ title, assignee: me.member_key, owner: me.member_key, event_id: null, status: "todo", is_private: false, notes: "" })
+      .select()
+      .single();
+    if (data) setTasks((ts) => [data, ...ts]);
+  };
+  const deleteTask = async (id) => {
+    if (!requireAuth()) return;
+    setTasks((ts) => ts.filter((t) => t.id !== id));
+    await supabase.from("tasks").delete().eq("id", id);
+    closeDrawer();
+  };
 
   const updateVendor = async (id, patch) => {
+    if (!requireAuth()) return;
     setVendors((vs) => vs.map((v) => (v.id === id ? { ...v, ...patch } : v)));
     await supabase.from("vendors").update(patch).eq("id", id);
   };
+  const addVendor = async (name) => {
+    if (!requireAuth()) return;
+    const id = crypto.randomUUID();
+    const row = { id, name, category: "", quote: 0, is_rush: false, event_id: null, next_step: "", log: "", contact: "", phone: "", email: "" };
+    setVendors((vs) => [...vs, row]);
+    await supabase.from("vendors").insert(row);
+  };
+  const deleteVendor = async (id) => {
+    if (!requireAuth()) return;
+    setVendors((vs) => vs.filter((v) => v.id !== id));
+    await supabase.from("vendors").delete().eq("id", id);
+    closeDrawer();
+  };
 
-  const addLook = async ({ lookId, accessoryIds, occasion }) => {
+  const updateNode = async (id, patch) => {
+    if (!requireAuth()) return;
+    setRunOfShowNodes((ns) => ns.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+    await supabase.from("run_of_show_nodes").update(patch).eq("id", id);
+  };
+  const addNode = async (eventId, title) => {
+    if (!requireAuth()) return;
+    const existing = nodesByEvent[eventId] || [];
+    const sortOrder = existing.length ? Math.max(...existing.map((n) => n.sort_order)) + 1 : 1;
+    const { data } = await supabase
+      .from("run_of_show_nodes")
+      .insert({ event_id: eventId, title, time_label: "", location: "", responsible: me.member_key, notes: "", sort_order: sortOrder })
+      .select()
+      .single();
+    if (data) setRunOfShowNodes((ns) => [...ns, data]);
+  };
+  const deleteNode = async (id) => {
+    if (!requireAuth()) return;
+    setRunOfShowNodes((ns) => ns.filter((n) => n.id !== id));
+    await supabase.from("run_of_show_nodes").delete().eq("id", id);
+    closeDrawer();
+  };
+
+  const createSavedLook = async ({ lookId, accessoryIds, occasion }) => {
+    if (!requireAuth()) return;
     const name = `造型 #${savedLooks.length + 1}`;
     const { data } = await supabase
       .from("saved_looks")
@@ -1833,7 +2336,14 @@ export default function BoardApp({ me }) {
       .single();
     if (data) setSavedLooks((ls) => [...ls, data]);
   };
+  const deleteSavedLook = async (id) => {
+    if (!requireAuth()) return;
+    setSavedLooks((ls) => ls.filter((l) => l.id !== id));
+    await supabase.from("saved_looks").delete().eq("id", id);
+    closeDrawer();
+  };
   const addTryon = async ({ lookName, accessoryNames }) => {
+    if (!requireAuth()) return;
     const { data } = await supabase
       .from("tryon_results")
       .insert({ look_name: lookName, accessory_names: accessoryNames, created_by: me.member_key })
@@ -1842,15 +2352,34 @@ export default function BoardApp({ me }) {
     if (data) setTryonResults((rs) => [data, ...rs]);
   };
 
+  const addDailyTask = async ({ title, deadline }) => {
+    if (!requireAuth()) return;
+    const { data } = await supabase
+      .from("daily_tasks")
+      .insert({ title, deadline: deadline || null, owner: me.member_key, status: "todo", is_private: false, notes: "" })
+      .select()
+      .single();
+    if (data) setDailyTasks((ts) => [...ts, data]);
+  };
+  const updateDailyTask = async (id, patch) => {
+    if (!requireAuth()) return;
+    setDailyTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    await supabase.from("daily_tasks").update(patch).eq("id", id);
+  };
+  const toggleDailyTaskDone = async (id) => {
+    if (!requireAuth()) return;
+    const t = dailyTasks.find((x) => x.id === id);
+    await updateDailyTask(id, { status: t.status === "done" ? "todo" : "done" });
+  };
+  const deleteDailyTask = async (id) => {
+    if (!requireAuth()) return;
+    setDailyTasks((ts) => ts.filter((t) => t.id !== id));
+    await supabase.from("daily_tasks").delete().eq("id", id);
+    closeDrawer();
+  };
+
   const openDrawer = (type, id) => setSelected({ type, id });
-  const openNode = (n) => {
-    setNode(n);
-    setSelected({ type: "node" });
-  };
-  const closeDrawer = () => {
-    setSelected(null);
-    setNode(null);
-  };
+  const closeDrawer = () => setSelected(null);
   const goToRunOfShow = (evId) => {
     setRosTab(evId);
     setTab("runofshow");
@@ -1863,32 +2392,51 @@ export default function BoardApp({ me }) {
   };
 
   const state = {
+    me,
     events,
     looks,
     accessories,
-    accCats: ACC_CATS,
     savedLooks,
     tryonResults,
     inventory,
     photosByItem,
     tasks,
     vendors,
+    runOfShowNodes,
     nodesByEvent,
-    node,
+    dailyTasks,
     toggleBudgetTracking,
+    updateEvent,
     updateLook,
     toggleLookOccasion,
+    addLookCandidate,
+    deleteLookCandidate,
+    addAccessory,
+    deleteAccessory,
     updateInventory,
     toggleInvOccasion,
+    addInventoryItem,
+    deleteInventoryItem,
     addInventoryPhotos,
     removeInventoryPhoto,
     updateTask,
     toggleTaskDone,
+    addTask,
+    deleteTask,
     updateVendor,
-    addLook,
+    addVendor,
+    deleteVendor,
+    updateNode,
+    addNode,
+    deleteNode,
+    createSavedLook,
+    deleteSavedLook,
     addTryon,
+    addDailyTask,
+    updateDailyTask,
+    toggleDailyTaskDone,
+    deleteDailyTask,
     openDrawer,
-    openNode,
   };
 
   if (loading) {
@@ -1899,12 +2447,13 @@ export default function BoardApp({ me }) {
     <MembersCtx.Provider value={profiles}>
       <Topbar tab={tab} setTab={setTab} me={me} adminView={adminView} setAdminView={setAdminView} onSignOut={handleSignOut} />
       {tab === "overview" && <Overview state={state} setTab={setTab} setInvFilter={setInvFilter} goToRunOfShow={goToRunOfShow} />}
-      {tab === "lookbook" && <Lookbook state={state} />}
-      {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} adminView={adminView} />}
       {tab === "tasks" && <Tasks state={state} />}
+      {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} adminView={adminView} />}
+      {tab === "lookbook" && <Lookbook state={state} />}
       {tab === "runofshow" && <RunOfShow state={state} evTab={rosTab} setEvTab={setRosTab} />}
       {tab === "vendors" && <VendorsBudget state={state} />}
-      <footer>H.S. &amp; C.H. · 云端工作台 · 修改会实时同步给对方</footer>
+      {tab === "daily" && <Daily state={state} />}
+      <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />
     </MembersCtx.Provider>
   );

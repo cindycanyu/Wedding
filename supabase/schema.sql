@@ -6,7 +6,12 @@
 create extension if not exists pgcrypto;
 
 -- ========== who is allowed in ==========
--- Fill in the two real sign-in emails before running this file.
+-- Fill in the two real sign-in emails only the FIRST time you run this file
+-- on a fresh project. On re-runs this intentionally changes nothing (even if
+-- you forgot to edit the placeholders below), so re-running this whole file
+-- can never clobber emails you already fixed by hand. To actually change an
+-- email later, run a plain `update public.member_invites set email = '...'
+-- where member_key = 'hs';` on its own instead of re-pasting this file.
 create table if not exists public.member_invites (
   email text primary key,
   member_key text not null unique check (member_key in ('hs','ch')),
@@ -18,11 +23,7 @@ create table if not exists public.member_invites (
 insert into public.member_invites (email, member_key, name, bg_color, text_color) values
   ('REPLACE_WITH_HS_EMAIL@example.com', 'hs', 'H.S.', '#2B4C7E', '#FFFFFF'),
   ('REPLACE_WITH_CH_EMAIL@example.com', 'ch', 'C.H.', '#D9B98C', '#211A12')
-on conflict (member_key) do update set
-  email = excluded.email,
-  name = excluded.name,
-  bg_color = excluded.bg_color,
-  text_color = excluded.text_color;
+on conflict (member_key) do nothing;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -195,16 +196,39 @@ create table if not exists public.run_of_show_nodes (
   sort_order int not null default 0
 );
 
+-- Everyday life to-dos, unrelated to the wedding itself. Same privacy model as
+-- tasks (owner-only when private), kept in its own table/tab on purpose.
+create table if not exists public.daily_tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  deadline date,
+  status text not null default 'todo' check (status in ('todo','done')),
+  is_private boolean not null default false,
+  owner text not null check (owner in ('hs','ch')),
+  notes text not null default '',
+  updated_at timestamptz not null default now()
+);
+
 -- ========== baseline privileges ==========
--- RLS policies decide *which rows* a query can see; the authenticated role still
--- needs the underlying SQL privilege to query the table at all, or every query
--- fails with "permission denied for table ..." before RLS is even evaluated.
--- member_invites is deliberately left out: no grant + no policy = fully blocked.
-grant usage on schema public to authenticated;
-grant select, insert, update, delete on
+-- RLS policies decide *which rows* a query can see; a role still needs the
+-- underlying SQL privilege to query the table at all, or every query fails
+-- with "permission denied for table ..." before RLS is even evaluated.
+-- The site is public to read: anon gets SELECT only. Writing needs an
+-- invited account, so only authenticated gets INSERT/UPDATE/DELETE.
+-- member_invites is deliberately left out of both: no grant + no policy =
+-- fully blocked from the API either way.
+grant usage on schema public to authenticated, anon;
+grant select on
   public.profiles, public.events, public.looks, public.accessories,
   public.saved_looks, public.tryon_results, public.inventory_items,
-  public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes
+  public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
+  public.daily_tasks
+to authenticated, anon;
+grant insert, update, delete on
+  public.profiles, public.events, public.looks, public.accessories,
+  public.saved_looks, public.tryon_results, public.inventory_items,
+  public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
+  public.daily_tasks
 to authenticated;
 
 -- ========== row level security ==========
@@ -219,79 +243,80 @@ alter table public.inventory_photos enable row level security;
 alter table public.tasks enable row level security;
 alter table public.vendors enable row level security;
 alter table public.run_of_show_nodes enable row level security;
+alter table public.daily_tasks enable row level security;
 alter table public.member_invites enable row level security; -- no policies: deny-all from the API, trigger bypasses via security definer
 
--- profiles: any invited member can see both profiles; you can only edit your own
+-- profiles: anyone can see the two member profiles (name/colors for avatars);
+-- you can only edit your own.
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles for select
-  using (public.current_member_key() is not null);
+  using (true);
 drop policy if exists "profiles_update_self" on public.profiles;
 create policy "profiles_update_self" on public.profiles for update
   using (id = auth.uid());
 
--- shared content tables: full read/write for either of the two invited members
-drop policy if exists "events_rw" on public.events;
-create policy "events_rw" on public.events for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
+-- shared content tables: anyone can read; only an invited, logged-in member
+-- can create, change or delete rows. One select + 3 write policies per table,
+-- generated in a loop so every table gets exactly the same rule.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
+    'inventory_items','inventory_photos','vendors','run_of_show_nodes']
+  loop
+    execute format('drop policy if exists "%s_rw" on public.%I', t, t);
+    execute format('drop policy if exists "%s_select" on public.%I', t, t);
+    execute format('create policy "%s_select" on public.%I for select using (true)', t, t);
+    execute format('drop policy if exists "%s_insert" on public.%I', t, t);
+    execute format(
+      'create policy "%s_insert" on public.%I for insert with check (public.current_member_key() is not null)',
+      t, t
+    );
+    execute format('drop policy if exists "%s_update" on public.%I', t, t);
+    execute format(
+      'create policy "%s_update" on public.%I for update using (public.current_member_key() is not null) with check (public.current_member_key() is not null)',
+      t, t
+    );
+    execute format('drop policy if exists "%s_delete" on public.%I', t, t);
+    execute format(
+      'create policy "%s_delete" on public.%I for delete using (public.current_member_key() is not null)',
+      t, t
+    );
+  end loop;
+end $$;
 
-drop policy if exists "looks_rw" on public.looks;
-create policy "looks_rw" on public.looks for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "accessories_rw" on public.accessories;
-create policy "accessories_rw" on public.accessories for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "saved_looks_rw" on public.saved_looks;
-create policy "saved_looks_rw" on public.saved_looks for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "tryon_results_rw" on public.tryon_results;
-create policy "tryon_results_rw" on public.tryon_results for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "inventory_items_rw" on public.inventory_items;
-create policy "inventory_items_rw" on public.inventory_items for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "inventory_photos_rw" on public.inventory_photos;
-create policy "inventory_photos_rw" on public.inventory_photos for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "vendors_rw" on public.vendors;
-create policy "vendors_rw" on public.vendors for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
-drop policy if exists "run_of_show_nodes_rw" on public.run_of_show_nodes;
-create policy "run_of_show_nodes_rw" on public.run_of_show_nodes for all
-  using (public.current_member_key() is not null)
-  with check (public.current_member_key() is not null);
-
--- tasks: the privacy rule — a private task is invisible and unwritable to anyone but its owner
-drop policy if exists "tasks_select" on public.tasks;
-create policy "tasks_select" on public.tasks for select
-  using (not is_private or owner = public.current_member_key());
-drop policy if exists "tasks_insert" on public.tasks;
-create policy "tasks_insert" on public.tasks for insert
-  with check (
-    public.current_member_key() is not null
-    and (not is_private or owner = public.current_member_key())
-  );
-drop policy if exists "tasks_update" on public.tasks;
-create policy "tasks_update" on public.tasks for update
-  using (not is_private or owner = public.current_member_key())
-  with check (not is_private or owner = public.current_member_key());
-drop policy if exists "tasks_delete" on public.tasks;
-create policy "tasks_delete" on public.tasks for delete
-  using (not is_private or owner = public.current_member_key());
+-- tasks and daily_tasks: the privacy rule — a private row is invisible and
+-- unwritable to anyone but its owner (including anonymous visitors, for whom
+-- current_member_key() is null, so only not_is_private rows ever match).
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['tasks','daily_tasks']
+  loop
+    execute format('drop policy if exists "%s_select" on public.%I', t, t);
+    execute format(
+      'create policy "%s_select" on public.%I for select using (not is_private or owner = public.current_member_key())',
+      t, t
+    );
+    execute format('drop policy if exists "%s_insert" on public.%I', t, t);
+    execute format(
+      'create policy "%s_insert" on public.%I for insert with check (public.current_member_key() is not null and (not is_private or owner = public.current_member_key()))',
+      t, t
+    );
+    execute format('drop policy if exists "%s_update" on public.%I', t, t);
+    execute format(
+      'create policy "%s_update" on public.%I for update using (not is_private or owner = public.current_member_key()) with check (not is_private or owner = public.current_member_key())',
+      t, t
+    );
+    execute format('drop policy if exists "%s_delete" on public.%I', t, t);
+    execute format(
+      'create policy "%s_delete" on public.%I for delete using (not is_private or owner = public.current_member_key())',
+      t, t
+    );
+  end loop;
+end $$;
 
 -- ========== realtime: both of you see each other's edits live ==========
 do $$
@@ -299,7 +324,8 @@ declare
   t text;
 begin
   foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
-    'inventory_items','inventory_photos','tasks','vendors','run_of_show_nodes','profiles']
+    'inventory_items','inventory_photos','tasks','vendors','run_of_show_nodes','profiles',
+    'daily_tasks']
   loop
     if not exists (
       select 1 from pg_publication_tables
@@ -311,14 +337,23 @@ begin
 end $$;
 
 -- ========== storage: real photos for purchased inventory items ==========
+-- Public bucket: anyone with the link can view a photo via its public URL
+-- (no RLS involved on that path). Uploading/deleting still needs an account.
 insert into storage.buckets (id, name, public)
-values ('inventory-photos', 'inventory-photos', false)
-on conflict (id) do nothing;
+values ('inventory-photos', 'inventory-photos', true)
+on conflict (id) do update set public = true;
 
 drop policy if exists "inventory_photos_storage_rw" on storage.objects;
-create policy "inventory_photos_storage_rw" on storage.objects for all
+drop policy if exists "inventory_photos_storage_insert" on storage.objects;
+create policy "inventory_photos_storage_insert" on storage.objects for insert
+  with check (bucket_id = 'inventory-photos' and public.current_member_key() is not null);
+drop policy if exists "inventory_photos_storage_update" on storage.objects;
+create policy "inventory_photos_storage_update" on storage.objects for update
   using (bucket_id = 'inventory-photos' and public.current_member_key() is not null)
   with check (bucket_id = 'inventory-photos' and public.current_member_key() is not null);
+drop policy if exists "inventory_photos_storage_delete" on storage.objects;
+create policy "inventory_photos_storage_delete" on storage.objects for delete
+  using (bucket_id = 'inventory-photos' and public.current_member_key() is not null);
 
 -- ========== seed data: mirrors the approved prototype ==========
 insert into public.events (id, name, en, date_label, status, status_label, progress, cover, description, witness_name, budget_tracking, budget_allocated, budget_confirmed, budget_estimated) values
@@ -397,3 +432,11 @@ select * from (values
   ('us', '21:00', '甜点 + 跳舞', '主宴会厅', 'ch', '甜品台 + DJ 收尾。', 4)
 ) as seed(event_id, time_label, title, location, responsible, notes, sort_order)
 where not exists (select 1 from public.run_of_show_nodes);
+
+insert into public.daily_tasks (title, deadline, status, is_private, owner, notes)
+select * from (values
+  ('续签公寓租约', (current_date + interval '10 days')::date, 'todo', false, 'hs', '房东说月底前要回复。'),
+  ('体检报告去拿', (current_date + interval '3 days')::date, 'todo', false, 'ch', ''),
+  ('还信用卡', (current_date + interval '1 days')::date, 'todo', true, 'hs', '')
+) as seed(title, deadline, status, is_private, owner, notes)
+where not exists (select 1 from public.daily_tasks);

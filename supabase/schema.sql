@@ -66,9 +66,13 @@ join public.member_invites mi on lower(trim(mi.email)) = lower(trim(u.email))
 on conflict (id) do nothing;
 
 -- Helper RLS policies key off this: null = "not an invited member", blocks everything.
+-- security definer is required: without it, this query is itself subject to the
+-- profiles_select policy below (which calls this same function), which recurses
+-- and makes every policy that calls this silently return nothing.
 create or replace function public.current_member_key()
 returns text
 language sql stable
+security definer set search_path = public
 as $$
   select member_key from public.profiles where id = auth.uid()
 $$;

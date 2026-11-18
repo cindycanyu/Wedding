@@ -195,6 +195,18 @@ create table if not exists public.run_of_show_nodes (
   sort_order int not null default 0
 );
 
+-- ========== baseline privileges ==========
+-- RLS policies decide *which rows* a query can see; the authenticated role still
+-- needs the underlying SQL privilege to query the table at all, or every query
+-- fails with "permission denied for table ..." before RLS is even evaluated.
+-- member_invites is deliberately left out: no grant + no policy = fully blocked.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on
+  public.profiles, public.events, public.looks, public.accessories,
+  public.saved_looks, public.tryon_results, public.inventory_items,
+  public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes
+to authenticated;
+
 -- ========== row level security ==========
 alter table public.profiles enable row level security;
 alter table public.events enable row level security;

@@ -15,7 +15,8 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("error") === "not_invited") {
-      setError("这个邮箱不在受邀名单里，请用 H.S. 或 C.H. 的邮箱。");
+      const debug = params.get("debug");
+      setError("这个邮箱不在受邀名单里，请用 H.S. 或 C.H. 的邮箱。" + (debug ? ` [debug: ${debug}]` : ""));
     }
   }, []);
 

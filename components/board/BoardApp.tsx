@@ -903,6 +903,7 @@ function AddItemModal({ open, onClose, onCreate, events, tagSuggestions, showAss
 /* ============ Drawer ============ */
 function Drawer({ selected, onClose, state }) {
   const photoInputRef = useRef();
+  const lookPhotoInputRef = useRef();
   const [zoomSrc, setZoomSrc] = useState(null);
   const profiles = useProfiles();
   if (!selected) return null;
@@ -929,6 +930,16 @@ function Drawer({ selected, onClose, state }) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     state.addInventoryPhotos(id, files);
+    e.target.value = "";
+  };
+
+  // A look/accessory's photos live on its auto-linked 物品清单 row (same
+  // inventory_photos table, keyed by that row's id) — they're treated as one
+  // and the same thing, so uploading here writes to the linked item, not id.
+  const onLookPhotoUpload = (e, linkedInvId) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !linkedInvId) return;
+    state.addInventoryPhotos(linkedInvId, files);
     e.target.value = "";
   };
 
@@ -1027,13 +1038,69 @@ function Drawer({ selected, onClose, state }) {
 
   if (type === "dress") {
     const d = state.looks.find((x) => x.id === id);
+    const linkedInv = state.inventory.find((i) => i.look_id === d.id);
+    const lookPhotos = (linkedInv && state.photosByItem[linkedInv.id]) || [];
     title = d.name;
     sub = d.subtitle;
     content = (
       <>
         <div className="drawer-cover">
-          <LookSilhouette look={d.look_shape} />
+          {lookPhotos.length > 0 ? (
+            <img src={lookPhotos[0].url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <LookSilhouette look={d.look_shape} />
+          )}
         </div>
+        {linkedInv && (
+          <div className="field">
+            <label>图片（与物品清单里的联动条目共用）</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {lookPhotos.map((p) => (
+                <div key={p.id} style={{ position: "relative", width: 68, height: 68 }}>
+                  <img
+                    src={p.url}
+                    onClick={() => setZoomSrc(p.url)}
+                    style={{ width: 68, height: 68, borderRadius: 10, objectFit: "cover", cursor: "pointer", display: "block" }}
+                  />
+                  <button
+                    onClick={() => state.removeInventoryPhoto(p)}
+                    aria-label="删除照片"
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -6,
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      background: "var(--rose-dark)",
+                      border: "2px solid var(--cream)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon name="x" size={10} color="#fff" />
+                  </button>
+                </div>
+              ))}
+              <button
+                className="btn btn-ghost"
+                onClick={() => lookPhotoInputRef.current.click()}
+                style={{ width: 68, height: 68, borderRadius: 10, justifyContent: "center", padding: 0 }}
+              >
+                <Icon name="upload" size={18} />
+              </button>
+              <input
+                ref={lookPhotoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => onLookPhotoUpload(e, linkedInv.id)}
+              />
+            </div>
+          </div>
+        )}
         <div className="kv">
           <span className="k">穿着者</span>
           <b style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2046,7 +2113,10 @@ function Lookbook({ state }) {
           <div className="empty-state">还没有造型候选，用上面的框添加一个</div>
         ) : (
           <div className="grid g3">
-            {zoneLooks.map((d) => (
+            {zoneLooks.map((d) => {
+              const linkedInv = state.inventory.find((i) => i.look_id === d.id);
+              const lookPhotos = (linkedInv && state.photosByItem[linkedInv.id]) || [];
+              return (
               <div
                 key={d.id}
                 className="card"
@@ -2058,7 +2128,14 @@ function Lookbook({ state }) {
                 }}
               >
                 <div className="card-cover">
-                  <LookSilhouette look={d.look_shape} />
+                  {lookPhotos.length > 0 ? (
+                    <img
+                      src={lookPhotos[0].url}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }}
+                    />
+                  ) : (
+                    <LookSilhouette look={d.look_shape} />
+                  )}
                   {lookSel.selMode && (
                     <span className="corner-ring">
                       <SelectCheckbox checked={lookSel.selected.has(d.id)} />
@@ -2092,7 +2169,8 @@ function Lookbook({ state }) {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -2138,7 +2216,10 @@ function Lookbook({ state }) {
             <div className="acc-grid">
               {state.accessories
                 .filter((a) => a.category === activeCat && a.wearer === builderWearer)
-                .map((a) => (
+                .map((a) => {
+                  const linkedInv = state.inventory.find((i) => i.accessory_id === a.id);
+                  const accPhotos = (linkedInv && state.photosByItem[linkedInv.id]) || [];
+                  return (
                   <div key={a.id} style={{ position: "relative" }}>
                     <button className={"acc-card" + (builderAcc.includes(a.id) ? " sel" : "")} onClick={() => toggleBuilderAcc(a.id)}>
                       {builderAcc.includes(a.id) && (
@@ -2147,7 +2228,11 @@ function Lookbook({ state }) {
                         </span>
                       )}
                       <div className="acc-cover">
-                        <AccIllustration cat={a.category} />
+                        {accPhotos.length > 0 ? (
+                          <img src={accPhotos[0].url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <AccIllustration cat={a.category} />
+                        )}
                       </div>
                       <div className="acc-info">
                         <div className="nm">{a.name}</div>
@@ -2179,7 +2264,8 @@ function Lookbook({ state }) {
                       </button>
                     )}
                   </div>
-                ))}
+                  );
+                })}
             </div>
           </div>
           <div className="lookpanel">

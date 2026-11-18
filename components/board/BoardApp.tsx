@@ -461,6 +461,52 @@ function DebouncedField({ as = "input", value, onCommit, delay = 600, ...props }
   );
 }
 
+// Same local-draft trick as DebouncedField, but for numbers: keeps whatever
+// the user is literally typing (including "" while clearing a 0) instead of
+// snapping the field back to 0 on every keystroke before they finish typing.
+function NumberField({ value, onCommit, delay = 600, ...props }) {
+  const [local, setLocal] = useState(value === null || value === undefined ? "" : String(value));
+  const focusedRef = useRef(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(value === null || value === undefined ? "" : String(value));
+  }, [value]);
+
+  const toNumber = (s) => {
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const flush = (s) => {
+    clearTimeout(timerRef.current);
+    onCommit(toNumber(s));
+  };
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    setLocal(v);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onCommit(toNumber(v)), delay);
+  };
+
+  return (
+    <input
+      {...props}
+      type="number"
+      value={local}
+      onChange={handleChange}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        flush(local);
+      }}
+    />
+  );
+}
+
 function DeleteButton({ onDelete, label = "删除" }) {
   return (
     <button
@@ -667,15 +713,18 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
                 </div>
               );
             }
+            if (f.type === "number") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <NumberField value={v} onCommit={(n) => set(f.key, n)} autoFocus={f.autoFocus} />
+                </div>
+              );
+            }
             return (
               <div className="field" key={f.key}>
                 <label>{f.label}</label>
-                <input
-                  type={f.type === "number" ? "number" : "text"}
-                  autoFocus={f.autoFocus}
-                  value={v ?? ""}
-                  onChange={(e) => set(f.key, f.type === "number" ? +e.target.value || 0 : e.target.value)}
-                />
+                <input autoFocus={f.autoFocus} value={v ?? ""} onChange={(e) => set(f.key, e.target.value)} />
               </div>
             );
           })}
@@ -946,28 +995,16 @@ function Drawer({ selected, onClose, state }) {
             <div className="rowfields">
               <div className="field">
                 <label>预算上限 (USD)</label>
-                <input
-                  type="number"
-                  value={ev.budget_allocated}
-                  onChange={(e) => state.updateEvent(id, { budget_allocated: +e.target.value || 0 })}
-                />
+                <NumberField value={ev.budget_allocated} onCommit={(v) => state.updateEvent(id, { budget_allocated: v })} />
               </div>
               <div className="field">
                 <label>已确认支出 (USD)</label>
-                <input
-                  type="number"
-                  value={ev.budget_confirmed}
-                  onChange={(e) => state.updateEvent(id, { budget_confirmed: +e.target.value || 0 })}
-                />
+                <NumberField value={ev.budget_confirmed} onCommit={(v) => state.updateEvent(id, { budget_confirmed: v })} />
               </div>
             </div>
             <div className="field">
               <label>预估待支出 (USD)</label>
-              <input
-                type="number"
-                value={ev.budget_estimated}
-                onChange={(e) => state.updateEvent(id, { budget_estimated: +e.target.value || 0 })}
-              />
+              <NumberField value={ev.budget_estimated} onCommit={(v) => state.updateEvent(id, { budget_estimated: v })} />
             </div>
           </>
         ) : (
@@ -1006,7 +1043,7 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>价格 (USD)</label>
-            <input value={d.price} onChange={(e) => state.updateLook(id, { price: +e.target.value || 0 })} />
+            <NumberField value={d.price} onCommit={(v) => state.updateLook(id, { price: v })} />
           </div>
           <div className="field">
             <label>版型</label>
@@ -1141,18 +1178,13 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>价格 (USD)</label>
-            <input
-              type="number"
-              value={it.price_usd}
-              onChange={(e) => state.updateInventory(id, { price_usd: +e.target.value || 0 })}
-            />
+            <NumberField value={it.price_usd} onCommit={(v) => state.updateInventory(id, { price_usd: v })} />
           </div>
           <div className="field">
             <label>价格 (CNY · 汇率 {RATE})</label>
-            <input
-              type="number"
+            <NumberField
               value={Math.round(it.price_usd * RATE)}
-              onChange={(e) => state.updateInventory(id, { price_usd: (+e.target.value || 0) / RATE })}
+              onCommit={(v) => state.updateInventory(id, { price_usd: v / RATE })}
             />
           </div>
         </div>
@@ -1301,7 +1333,7 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>报价 (USD)</label>
-            <input type="number" value={v.quote} onChange={(e) => state.updateVendor(id, { quote: +e.target.value || 0 })} />
+            <NumberField value={v.quote} onCommit={(val) => state.updateVendor(id, { quote: val })} />
           </div>
           <div className="field">
             <label>回复截止日期</label>

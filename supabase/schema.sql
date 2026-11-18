@@ -93,8 +93,10 @@ create table if not exists public.events (
   budget_tracking boolean not null default false,
   budget_allocated numeric not null default 0,
   budget_confirmed numeric not null default 0,
-  budget_estimated numeric not null default 0
+  budget_estimated numeric not null default 0,
+  sort_order int not null default 0
 );
+alter table public.events add column if not exists sort_order int not null default 0;
 
 create table if not exists public.looks (
   id text primary key,
@@ -401,6 +403,19 @@ on conflict (id) do nothing;
 -- project where the insert above was a no-op the first time.
 update public.events set name = '正式婚礼' where id = 'cn';
 update public.events set name = '美国朋友聚餐/旅行', en = 'US Friends Gathering' where id = 'us';
+
+-- Give the three a stable starting order; after this, reordering from the
+-- app is what moves them, not whatever order Postgres happens to return.
+-- Only runs while every row is still untouched (sort_order = 0), so it can
+-- never undo a reorder you've already done from the app.
+do $$
+begin
+  if (select count(*) from public.events where sort_order <> 0) = 0 then
+    update public.events set sort_order = 0 where id = 'sf';
+    update public.events set sort_order = 1 where id = 'cn';
+    update public.events set sort_order = 2 where id = 'us';
+  end if;
+end $$;
 
 -- One-time cleanup for a project that already ran an older version of this
 -- file with example content (dresses, gloves, sample tasks, ...). Targets

@@ -406,32 +406,49 @@ function OccChips({ occasions }) {
     </div>
   );
 }
-function QuickAddRow({ placeholder, onCreate, me, children, buttonLabel = "添加" }) {
-  const [title, setTitle] = useState("");
-  if (!me) return null;
+/* ============ Debounced text field ============ */
+// Keeps a local draft so typing (including IME composition for Chinese
+// pinyin) is never interrupted by a realtime sync overwriting the value
+// mid-keystroke. The actual save is debounced while typing and flushed on
+// blur; external updates are only pulled in while the field isn't focused.
+function DebouncedField({ as = "input", value, onCommit, delay = 600, ...props }) {
+  const [local, setLocal] = useState(value ?? "");
+  const focusedRef = useRef(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(value ?? "");
+  }, [value]);
+
+  const flush = (v) => {
+    clearTimeout(timerRef.current);
+    onCommit(v);
+  };
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    setLocal(v);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onCommit(v), delay);
+  };
+
+  const Tag = as;
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!title.trim()) return;
-        onCreate(title.trim());
-        setTitle("");
+    <Tag
+      {...props}
+      value={local}
+      onChange={handleChange}
+      onFocus={() => {
+        focusedRef.current = true;
       }}
-      style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}
-    >
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder={placeholder}
-        style={{ flex: "1 1 180px", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)", color: "var(--plum)" }}
-      />
-      {children}
-      <button className="btn btn-primary" type="submit">
-        <Icon name="plus" size={13} /> {buttonLabel}
-      </button>
-    </form>
+      onBlur={() => {
+        focusedRef.current = false;
+        flush(local);
+      }}
+    />
   );
 }
+
 function DeleteButton({ onDelete, label = "删除" }) {
   return (
     <button
@@ -551,6 +568,113 @@ function TagEditor({ tags, onChange, events, suggestions = [] }) {
 }
 
 /* ============ Add item modal (tasks & daily share this) ============ */
+/* ============ Generic "fill in everything, then create" modal ============ */
+// Used for every other "add" flow (looks, accessories, inventory, vendors,
+// run-of-show nodes) so creating something always means filling out the
+// whole form up front, not create-a-title-then-edit-later.
+function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
+  const [values, setValues] = useState({});
+  useEffect(() => {
+    if (open) setValues({ ...initialValues });
+  }, [open]);
+  if (!open) return null;
+  const set = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
+  const submit = (e) => {
+    e.preventDefault();
+    for (const f of fields) {
+      if (f.required && !String(values[f.key] ?? "").trim()) return;
+    }
+    onCreate(values);
+    onClose();
+  };
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label={title}>
+        <div className="drawer-head">
+          <h3>{title}</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <form className="drawer-body" onSubmit={submit}>
+          {fields.map((f) => {
+            const v = values[f.key];
+            if (f.type === "select") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <select value={v ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            if (f.type === "textarea") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <textarea rows={f.rows || 3} value={v ?? ""} onChange={(e) => set(f.key, e.target.value)} />
+                </div>
+              );
+            }
+            if (f.type === "checkbox") {
+              return (
+                <div className="field" key={f.key}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!v} onChange={(e) => set(f.key, e.target.checked)} style={{ width: 14, height: 14 }} />
+                    {f.label}
+                  </label>
+                </div>
+              );
+            }
+            if (f.type === "chips") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {f.options.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        className={"chip" + ((v || []).includes(o.value) ? " on" : "")}
+                        onClick={() => {
+                          const cur = v || [];
+                          set(f.key, cur.includes(o.value) ? cur.filter((x) => x !== o.value) : [...cur, o.value]);
+                        }}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="field" key={f.key}>
+                <label>{f.label}</label>
+                <input
+                  type={f.type === "number" ? "number" : "text"}
+                  autoFocus={f.autoFocus}
+                  value={v ?? ""}
+                  onChange={(e) => set(f.key, f.type === "number" ? +e.target.value || 0 : e.target.value)}
+                />
+              </div>
+            );
+          })}
+          <button className="btn btn-primary" type="submit" style={{ justifyContent: "center" }}>
+            创建
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
 function AddItemModal({ open, onClose, onCreate, events, tagSuggestions, showAssignee, defaultAssignee, suggestedTag }) {
   const profiles = useProfiles();
   const [title, setTitle] = useState("");
@@ -668,29 +792,29 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>名称</label>
-          <input value={ev.name} onChange={(e) => state.updateEvent(id, { name: e.target.value })} />
+          <DebouncedField value={ev.name} onCommit={(v) => state.updateEvent(id, { name: v })} />
         </div>
         <div className="rowfields">
           <div className="field">
             <label>英文 / 简称</label>
-            <input value={ev.en} onChange={(e) => state.updateEvent(id, { en: e.target.value })} />
+            <DebouncedField value={ev.en} onCommit={(v) => state.updateEvent(id, { en: v })} />
           </div>
           <div className="field">
             <label>状态标签</label>
-            <input value={ev.status_label} onChange={(e) => state.updateEvent(id, { status_label: e.target.value })} />
+            <DebouncedField value={ev.status_label} onCommit={(v) => state.updateEvent(id, { status_label: v })} />
           </div>
         </div>
         <div className="field">
           <label>日期 / 地点</label>
-          <input value={ev.date_label} onChange={(e) => state.updateEvent(id, { date_label: e.target.value })} />
+          <DebouncedField value={ev.date_label} onCommit={(v) => state.updateEvent(id, { date_label: v })} />
         </div>
         <div className="field">
           <label>说明</label>
-          <textarea rows="3" value={ev.description} onChange={(e) => state.updateEvent(id, { description: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={ev.description} onCommit={(v) => state.updateEvent(id, { description: v })} />
         </div>
         <div className="field">
           <label>证婚人（没有就留空）</label>
-          <input value={ev.witness_name || ""} onChange={(e) => state.updateEvent(id, { witness_name: e.target.value || null })} />
+          <DebouncedField value={ev.witness_name || ""} onCommit={(v) => state.updateEvent(id, { witness_name: v || null })} />
         </div>
         <div className="field">
           <label>整体进度</label>
@@ -792,27 +916,27 @@ function Drawer({ selected, onClose, state }) {
           </div>
           <div className="field">
             <label>版型</label>
-            <input value={d.silhouette} onChange={(e) => state.updateLook(id, { silhouette: e.target.value })} />
+            <DebouncedField value={d.silhouette} onCommit={(v) => state.updateLook(id, { silhouette: v })} />
           </div>
         </div>
         <div className="rowfields">
           <div className="field">
             <label>面料</label>
-            <input value={d.fabric} onChange={(e) => state.updateLook(id, { fabric: e.target.value })} />
+            <DebouncedField value={d.fabric} onCommit={(v) => state.updateLook(id, { fabric: v })} />
           </div>
           <div className="field">
             <label>光泽度</label>
-            <input value={d.sheen} onChange={(e) => state.updateLook(id, { sheen: e.target.value })} />
+            <DebouncedField value={d.sheen} onCommit={(v) => state.updateLook(id, { sheen: v })} />
           </div>
         </div>
         <div className="rowfields">
           <div className="field">
             <label>现货 / 加急周期</label>
-            <input value={d.availability} onChange={(e) => state.updateLook(id, { availability: e.target.value })} />
+            <DebouncedField value={d.availability} onCommit={(v) => state.updateLook(id, { availability: v })} />
           </div>
           <div className="field">
             <label>改衣预估</label>
-            <input value={d.alteration} onChange={(e) => state.updateLook(id, { alteration: e.target.value })} />
+            <DebouncedField value={d.alteration} onCommit={(v) => state.updateLook(id, { alteration: v })} />
           </div>
         </div>
         <div className="field">
@@ -832,7 +956,7 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>备注 / 沟通记录</label>
-          <textarea rows="3" value={d.notes} onChange={(e) => state.updateLook(id, { notes: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={d.notes} onCommit={(v) => state.updateLook(id, { notes: v })} />
         </div>
         <div className="kv">
           <span className="k">添加人</span>
@@ -856,7 +980,7 @@ function Drawer({ selected, onClose, state }) {
       <>
         <div className="field">
           <label>名称</label>
-          <input value={it.name} onChange={(e) => state.updateInventory(id, { name: e.target.value })} />
+          <DebouncedField value={it.name} onCommit={(v) => state.updateInventory(id, { name: v })} />
         </div>
         <div className="field">
           <label>状态</label>
@@ -931,7 +1055,7 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>购买渠道</label>
-          <input value={it.channel} onChange={(e) => state.updateInventory(id, { channel: e.target.value })} />
+          <DebouncedField value={it.channel} onCommit={(v) => state.updateInventory(id, { channel: v })} />
         </div>
         <div className="field">
           <label>跨场合复用计划</label>
@@ -950,7 +1074,7 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>备注</label>
-          <textarea rows="3" value={it.notes} onChange={(e) => state.updateInventory(id, { notes: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={it.notes} onCommit={(v) => state.updateInventory(id, { notes: v })} />
         </div>
         {it.status !== "purchased" && (
           <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
@@ -968,7 +1092,7 @@ function Drawer({ selected, onClose, state }) {
       <>
         <div className="field">
           <label>标题</label>
-          <input value={t.title} onChange={(e) => state.updateTask(id, { title: e.target.value })} />
+          <DebouncedField value={t.title} onCommit={(v) => state.updateTask(id, { title: v })} />
         </div>
         <div className="rowfields">
           <div className="field">
@@ -1019,7 +1143,7 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>备注</label>
-          <textarea rows="4" value={t.notes} onChange={(e) => state.updateTask(id, { notes: e.target.value })} />
+          <DebouncedField as="textarea" rows="4" value={t.notes} onCommit={(v) => state.updateTask(id, { notes: v })} />
         </div>
         {state.me && <DeleteButton onDelete={() => state.deleteTask(id)} />}
       </>
@@ -1035,24 +1159,24 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>时间</label>
-            <input value={n.time_label} onChange={(e) => state.updateNode(id, { time_label: e.target.value })} />
+            <DebouncedField value={n.time_label} onCommit={(v) => state.updateNode(id, { time_label: v })} />
           </div>
           <div className="field">
             <label>标题</label>
-            <input value={n.title} onChange={(e) => state.updateNode(id, { title: e.target.value })} />
+            <DebouncedField value={n.title} onCommit={(v) => state.updateNode(id, { title: v })} />
           </div>
         </div>
         <div className="field">
           <label>地点</label>
-          <input value={n.location} onChange={(e) => state.updateNode(id, { location: e.target.value })} />
+          <DebouncedField value={n.location} onCommit={(v) => state.updateNode(id, { location: v })} />
         </div>
         <div className="field">
           <label>负责人</label>
-          <input value={n.responsible} onChange={(e) => state.updateNode(id, { responsible: e.target.value })} placeholder="hs / ch / 或填写姓名" />
+          <DebouncedField value={n.responsible} onCommit={(v) => state.updateNode(id, { responsible: v })} placeholder="hs / ch / 或填写姓名" />
         </div>
         <div className="field">
           <label>执行细节 / 注意事项</label>
-          <textarea rows="3" value={n.notes} onChange={(e) => state.updateNode(id, { notes: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={n.notes} onCommit={(v) => state.updateNode(id, { notes: v })} />
         </div>
         {state.me && <DeleteButton onDelete={() => state.deleteNode(id)} label="删除这个环节" />}
       </>
@@ -1068,11 +1192,11 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>名称</label>
-            <input value={v.name} onChange={(e) => state.updateVendor(id, { name: e.target.value })} />
+            <DebouncedField value={v.name} onCommit={(val) => state.updateVendor(id, { name: val })} />
           </div>
           <div className="field">
             <label>类别</label>
-            <input value={v.category} onChange={(e) => state.updateVendor(id, { category: e.target.value })} />
+            <DebouncedField value={v.category} onCommit={(val) => state.updateVendor(id, { category: val })} />
           </div>
         </div>
         <div className="rowfields">
@@ -1082,7 +1206,7 @@ function Drawer({ selected, onClose, state }) {
           </div>
           <div className="field">
             <label>回复截止日期</label>
-            <input value={v.deadline || ""} onChange={(e) => state.updateVendor(id, { deadline: e.target.value })} />
+            <DebouncedField value={v.deadline || ""} onCommit={(val) => state.updateVendor(id, { deadline: val })} />
           </div>
         </div>
         <div className="field">
@@ -1110,24 +1234,24 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>联系人</label>
-            <input value={v.contact} onChange={(e) => state.updateVendor(id, { contact: e.target.value })} />
+            <DebouncedField value={v.contact} onCommit={(val) => state.updateVendor(id, { contact: val })} />
           </div>
           <div className="field">
             <label>电话</label>
-            <input value={v.phone} onChange={(e) => state.updateVendor(id, { phone: e.target.value })} />
+            <DebouncedField value={v.phone} onCommit={(val) => state.updateVendor(id, { phone: val })} />
           </div>
         </div>
         <div className="field">
           <label>邮箱</label>
-          <input value={v.email} onChange={(e) => state.updateVendor(id, { email: e.target.value })} />
+          <DebouncedField value={v.email} onCommit={(val) => state.updateVendor(id, { email: val })} />
         </div>
         <div className="field">
           <label>沟通摘要</label>
-          <textarea rows="3" value={v.log} onChange={(e) => state.updateVendor(id, { log: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={v.log} onCommit={(val) => state.updateVendor(id, { log: val })} />
         </div>
         <div className="field">
           <label>下一步行动</label>
-          <textarea rows="2" value={v.next_step} onChange={(e) => state.updateVendor(id, { next_step: e.target.value })} />
+          <DebouncedField as="textarea" rows="2" value={v.next_step} onCommit={(val) => state.updateVendor(id, { next_step: val })} />
         </div>
         {state.me && <DeleteButton onDelete={() => state.deleteVendor(id)} />}
       </>
@@ -1199,7 +1323,7 @@ function Drawer({ selected, onClose, state }) {
       <>
         <div className="field">
           <label>标题</label>
-          <input value={d.title} onChange={(e) => state.updateDailyTask(id, { title: e.target.value })} />
+          <DebouncedField value={d.title} onCommit={(val) => state.updateDailyTask(id, { title: val })} />
         </div>
         <div className="rowfields">
           <div className="field">
@@ -1233,7 +1357,7 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="field">
           <label>备注</label>
-          <textarea rows="3" value={d.notes} onChange={(e) => state.updateDailyTask(id, { notes: e.target.value })} />
+          <DebouncedField as="textarea" rows="3" value={d.notes} onCommit={(val) => state.updateDailyTask(id, { notes: val })} />
         </div>
         {state.me && <DeleteButton onDelete={() => state.deleteDailyTask(id)} />}
       </>
@@ -1402,8 +1526,17 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
 
       <div className="section">
         <div className="grid g3">
-          {state.events.map((ev) => (
-            <button key={ev.id} className="card" onClick={() => state.openDrawer("event", ev.id)}>
+          {state.events.map((ev, i) => (
+            <div
+              key={ev.id}
+              className="card"
+              role="button"
+              tabIndex={0}
+              onClick={() => state.openDrawer("event", ev.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") state.openDrawer("event", ev.id);
+              }}
+            >
               <div className="card-cover">
                 <Cover type={ev.cover} />
                 <span className={"corner-badge badge " + ev.status}>{ev.status_label}</span>
@@ -1412,12 +1545,44 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
                 </span>
               </div>
               <div className="card-body">
-                <div className="card-title">{ev.name}</div>
-                <div className="card-sub">
-                  {ev.en} · {ev.date_label}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div>
+                    <div className="card-title">{ev.name}</div>
+                    <div className="card-sub">
+                      {ev.en} · {ev.date_label}
+                    </div>
+                  </div>
+                  {state.me && (
+                    <div style={{ display: "flex", gap: 4, flex: "none" }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "4px 8px" }}
+                        disabled={i === 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          state.reorderEvent(ev.id, -1);
+                        }}
+                        aria-label="往前移"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "4px 8px" }}
+                        disabled={i === state.events.length - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          state.reorderEvent(ev.id, 1);
+                        }}
+                        aria-label="往后移"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -1570,8 +1735,8 @@ function Lookbook({ state }) {
     if (!state.looks.find((d) => d.id === tryonDress)) setTryonDress(state.looks[0]?.id);
   }, [state.looks]);
 
-  const [newLookShape, setNewLookShape] = useState("aline");
-  const [newAccPrice, setNewAccPrice] = useState("");
+  const [addLookOpenFor, setAddLookOpenFor] = useState(null);
+  const [addAccOpen, setAddAccOpen] = useState(false);
   const lookSel = useMultiSelect();
   const [priceRevealed, setPriceRevealed] = useState(() => new Set());
   const toggleLookPriceReveal = (id, e) => {
@@ -1628,20 +1793,9 @@ function Lookbook({ state }) {
           <h2 style={{ fontSize: 18 }}>{zoneLabel}</h2>
         </div>
         {state.me && (
-          <QuickAddRow
-            placeholder={`新造型名称，比如 ${wearerKey === "ch" ? "Juliet" : "Windsor"}`}
-            buttonLabel="添加造型"
-            me={state.me}
-            onCreate={(name) => state.addLookCandidate({ name, wearer: wearerKey, lookShape: newLookShape })}
-          >
-            <select value={newLookShape} onChange={(e) => setNewLookShape(e.target.value)}>
-              {LOOK_SHAPES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </QuickAddRow>
+          <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setAddLookOpenFor(wearerKey)}>
+            <Icon name="plus" size={13} /> 添加造型
+          </button>
         )}
         {zoneLooks.length === 0 ? (
           <div className="empty-state">还没有造型候选，用上面的框添加一个</div>
@@ -1718,22 +1872,9 @@ function Lookbook({ state }) {
               ))}
             </div>
             {state.me && (
-              <QuickAddRow
-                placeholder="新配饰名称"
-                buttonLabel="添加配饰"
-                me={state.me}
-                onCreate={(name) =>
-                  state.addAccessory({ name, category: activeCat, wearer: builderWearer, price: +newAccPrice || 0 })
-                }
-              >
-                <input
-                  type="number"
-                  placeholder="价格"
-                  value={newAccPrice}
-                  onChange={(e) => setNewAccPrice(e.target.value)}
-                  style={{ width: 90, border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)" }}
-                />
-              </QuickAddRow>
+              <button className="btn btn-primary" style={{ marginBottom: 14 }} onClick={() => setAddAccOpen(true)}>
+                <Icon name="plus" size={13} /> 添加配饰
+              </button>
             )}
             <div className="acc-grid">
               {state.accessories
@@ -1939,6 +2080,37 @@ function Lookbook({ state }) {
           </div>
         )}
       </div>
+      <FormModal
+        open={!!addLookOpenFor}
+        onClose={() => setAddLookOpenFor(null)}
+        title={`添加造型 · ${addLookOpenFor === "ch" ? "她的" : "他的"}`}
+        onCreate={(values) => state.addLookCandidate({ ...values, wearer: addLookOpenFor })}
+        initialValues={{ look_shape: "aline", price: 0, occasions: [] }}
+        fields={[
+          { key: "name", label: "名称", required: true, autoFocus: true },
+          { key: "look_shape", label: "剪影款式", type: "select", options: LOOK_SHAPES.map((s) => ({ value: s.id, label: s.name })) },
+          { key: "price", label: "价格 (USD)", type: "number" },
+          { key: "silhouette", label: "版型" },
+          { key: "fabric", label: "面料" },
+          { key: "sheen", label: "光泽度" },
+          { key: "availability", label: "现货 / 加急周期" },
+          { key: "alteration", label: "改衣预估" },
+          { key: "occasions", label: "适用场合", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
+          { key: "notes", label: "备注", type: "textarea" },
+        ]}
+      />
+      <FormModal
+        open={addAccOpen}
+        onClose={() => setAddAccOpen(false)}
+        title="添加配饰"
+        onCreate={(values) => state.addAccessory({ ...values, wearer: builderWearer })}
+        initialValues={{ category: activeCat, price: 0 }}
+        fields={[
+          { key: "name", label: "名称", required: true, autoFocus: true },
+          { key: "category", label: "类别", type: "select", options: ACC_CATS.map((c) => ({ value: c.id, label: c.name })) },
+          { key: "price", label: "价格 (USD)", type: "number" },
+        ]}
+      />
     </div>
   );
 }
@@ -1947,6 +2119,7 @@ function Lookbook({ state }) {
 function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
   const [occFilter, setOccFilter] = useState(initialEventFilter || "all");
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
+  const [addOpen, setAddOpen] = useState(false);
   const [revealed, setRevealed] = useState(() => new Set());
   const toggleReveal = (id, e) => {
     e.stopPropagation();
@@ -1972,8 +2145,14 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           <h2>物品与资产清单</h2>
           <span className="meta">未确认购买的物品不计入已购预算</span>
         </div>
-        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
-        <QuickAddRow placeholder="新物品名称" buttonLabel="添加物品" me={state.me} onCreate={(name) => state.addInventoryItem(name)} />
+        <div className="filterbar">
+          <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
+          {state.me && (
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={13} /> 添加物品
+            </button>
+          )}
+        </div>
         <div className="filterbar">
           <button className={"chip" + (invFilter === "all" ? " on" : "")} onClick={() => setInvFilter("all")}>
             全部状态
@@ -2053,6 +2232,21 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           </div>
         )}
       </div>
+      <FormModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="添加物品"
+        onCreate={(values) => state.addInventoryItem(values)}
+        initialValues={{ status: "to_buy", price_usd: 0, occasions: [] }}
+        fields={[
+          { key: "name", label: "名称", required: true, autoFocus: true },
+          { key: "status", label: "状态", type: "select", options: Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label })) },
+          { key: "price_usd", label: "价格 (USD)", type: "number" },
+          { key: "channel", label: "购买渠道" },
+          { key: "occasions", label: "跨场合复用计划", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
+          { key: "notes", label: "备注", type: "textarea" },
+        ]}
+      />
     </div>
   );
 }
@@ -2308,6 +2502,7 @@ function Daily({ state }) {
 
 /* ============ Run of Show page ============ */
 function RunOfShow({ state, evTab, setEvTab }) {
+  const [addOpen, setAddOpen] = useState(false);
   const nodes = state.nodesByEvent[evTab] || [];
   const ev = state.events.find((e) => e.id === evTab);
   return (
@@ -2324,12 +2519,11 @@ function RunOfShow({ state, evTab, setEvTab }) {
             </button>
           ))}
         </div>
-        <QuickAddRow
-          placeholder="新环节标题"
-          buttonLabel="添加环节"
-          me={state.me}
-          onCreate={(title) => state.addNode(evTab, title)}
-        />
+        {state.me && (
+          <button className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setAddOpen(true)}>
+            <Icon name="plus" size={13} /> 添加环节
+          </button>
+        )}
         {nodes.length === 0 ? (
           <div className="empty-state">还没有流程节点</div>
         ) : (
@@ -2353,6 +2547,20 @@ function RunOfShow({ state, evTab, setEvTab }) {
         )}
         {ev?.status === "tbd" && <p className="note" style={{ marginTop: 12 }}>该活动日程仍为草稿，细节确认后将同步更新。</p>}
       </div>
+      <FormModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title={`添加环节 · ${ev?.name || ""}`}
+        onCreate={(values) => state.addNode(evTab, values)}
+        initialValues={{ responsible: state.me?.member_key }}
+        fields={[
+          { key: "title", label: "标题", required: true, autoFocus: true },
+          { key: "time_label", label: "时间" },
+          { key: "location", label: "地点" },
+          { key: "responsible", label: "负责人", type: "select", options: [{ value: "hs", label: "H.S." }, { value: "ch", label: "C.H." }] },
+          { key: "notes", label: "执行细节 / 注意事项", type: "textarea" },
+        ]}
+      />
     </div>
   );
 }
@@ -2362,6 +2570,7 @@ function VendorsBudget({ state, initialEventFilter }) {
   const [groupBy, setGroupBy] = useState("event");
   const [vendorEvFilter, setVendorEvFilter] = useState(initialEventFilter || "all");
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
+  const [addOpen, setAddOpen] = useState(false);
   const bulkDelete = async () => {
     if (selected.size === 0) return;
     if (!window.confirm(`确定删除选中的 ${selected.size} 个供应商吗？`)) return;
@@ -2378,8 +2587,14 @@ function VendorsBudget({ state, initialEventFilter }) {
           <h2>供应商</h2>
           <span className="meta">点击卡片查看联系人与沟通记录</span>
         </div>
-        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
-        <QuickAddRow placeholder="新供应商名称" buttonLabel="添加供应商" me={state.me} onCreate={(name) => state.addVendor(name)} />
+        <div className="filterbar">
+          <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
+          {state.me && (
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={13} /> 添加供应商
+            </button>
+          )}
+        </div>
         <div className="filterbar">
           <button className={"chip" + (vendorEvFilter === "all" ? " on" : "")} onClick={() => setVendorEvFilter("all")}>
             全部活动
@@ -2522,6 +2737,29 @@ function VendorsBudget({ state, initialEventFilter }) {
               );
             })}
       </div>
+      <FormModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="添加供应商"
+        onCreate={(values) => state.addVendor(values)}
+        initialValues={{ quote: 0, is_rush: false, event_id: "" }}
+        fields={[
+          { key: "name", label: "名称", required: true, autoFocus: true },
+          { key: "category", label: "类别" },
+          { key: "quote", label: "报价 (USD)", type: "number" },
+          { key: "is_rush", label: "加急", type: "checkbox" },
+          { key: "deadline", label: "回复截止日期 (YYYY-MM-DD)" },
+          {
+            key: "event_id", label: "所属活动", type: "select",
+            options: [{ value: "", label: "全局" }, ...state.events.map((ev) => ({ value: ev.id, label: ev.name }))],
+          },
+          { key: "contact", label: "联系人" },
+          { key: "phone", label: "电话" },
+          { key: "email", label: "邮箱" },
+          { key: "next_step", label: "下一步行动", type: "textarea", rows: 2 },
+          { key: "log", label: "沟通摘要", type: "textarea" },
+        ]}
+      />
     </div>
   );
 }
@@ -2578,7 +2816,7 @@ export default function BoardApp({ me: initialMe }) {
       invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes,
     ] = await Promise.all([
       supabase.from("profiles").select("*"),
-      supabase.from("events").select("*"),
+      supabase.from("events").select("*").order("sort_order"),
       supabase.from("looks").select("*"),
       supabase.from("accessories").select("*"),
       supabase.from("saved_looks").select("*").order("created_at"),
@@ -2666,6 +2904,23 @@ export default function BoardApp({ me: initialMe }) {
     setEvents((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
     await supabase.from("events").update(patch).eq("id", id);
   };
+  const reorderEvent = async (id, direction) => {
+    if (!requireAuth()) return;
+    const sorted = [...events].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = sorted.findIndex((e) => e.id === id);
+    const swapIdx = idx + direction;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx], b = sorted[swapIdx];
+    setEvents((es) =>
+      es.map((e) => {
+        if (e.id === a.id) return { ...e, sort_order: b.sort_order };
+        if (e.id === b.id) return { ...e, sort_order: a.sort_order };
+        return e;
+      })
+    );
+    await supabase.from("events").update({ sort_order: b.sort_order }).eq("id", a.id);
+    await supabase.from("events").update({ sort_order: a.sort_order }).eq("id", b.id);
+  };
 
   const updateLook = async (id, patch) => {
     if (!requireAuth()) return;
@@ -2688,22 +2943,25 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? look.occasions.filter((o) => o !== evId) : [...look.occasions, evId];
     await updateLook(id, { occasions });
   };
-  const addLookCandidate = async ({ name, wearer, lookShape }) => {
+  const addLookCandidate = async ({
+    name, wearer, look_shape, price, silhouette, fabric, sheen,
+    availability, alteration, occasions, notes,
+  }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
     const row = {
-      id, name, wearer, look_shape: lookShape, added_by: me.member_key,
-      subtitle: "", price: 0, silhouette: "", fabric: "", sheen: "",
-      availability: "", alteration: "", occasions: [], notes: "",
+      id, name, wearer, look_shape: look_shape || "aline", added_by: me.member_key,
+      subtitle: "", price: price || 0, silhouette: silhouette || "", fabric: fabric || "", sheen: sheen || "",
+      availability: availability || "", alteration: alteration || "", occasions: occasions || [], notes: notes || "",
     };
     setLooks((ls) => [...ls, row]);
     const { data } = await supabase.from("looks").insert(row).select().single();
     if (data) setLooks((ls) => ls.map((l) => (l.id === id ? data : l)));
-    // Linked so it shows up in 物品清单 too — "待定" since adding a candidate isn't
+    // Linked so it shows up in 物品清单 too — "选择中" since adding a candidate isn't
     // a purchase decision yet. updateLook keeps the name/price in sync afterward.
     const invId = crypto.randomUUID();
     const invRow = {
-      id: invId, name, status: "pending", price_usd: 0, occasions: [],
+      id: invId, name, status: "pending", price_usd: price || 0, occasions: occasions || [],
       channel: "", added_by: me.member_key, notes: "", look_id: id,
     };
     setInventory((is) => [...is, invRow]);
@@ -2747,10 +3005,13 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
-  const addInventoryItem = async (name) => {
+  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
-    const row = { id, name, status: "to_buy", price_usd: 0, occasions: [], channel: "", added_by: me.member_key, notes: "" };
+    const row = {
+      id, name, status: status || "to_buy", price_usd: price_usd || 0,
+      occasions: occasions || [], channel: channel || "", added_by: me.member_key, notes: notes || "",
+    };
     setInventory((is) => [...is, row]);
     await supabase.from("inventory_items").insert(row);
     logActivity(`添加了物品「${name}」`);
@@ -2826,10 +3087,14 @@ export default function BoardApp({ me: initialMe }) {
     setVendors((vs) => vs.map((v) => (v.id === id ? { ...v, ...patch } : v)));
     await supabase.from("vendors").update(patch).eq("id", id);
   };
-  const addVendor = async (name) => {
+  const addVendor = async ({ name, category, quote, is_rush, deadline, event_id, contact, phone, email, next_step, log: logText }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
-    const row = { id, name, category: "", quote: 0, is_rush: false, event_id: null, next_step: "", log: "", contact: "", phone: "", email: "" };
+    const row = {
+      id, name, category: category || "", quote: quote || 0, is_rush: !!is_rush,
+      deadline: deadline || null, event_id: event_id || null, next_step: next_step || "",
+      log: logText || "", contact: contact || "", phone: phone || "", email: email || "",
+    };
     setVendors((vs) => [...vs, row]);
     await supabase.from("vendors").insert(row);
     logActivity(`添加了供应商「${name}」`);
@@ -2848,13 +3113,16 @@ export default function BoardApp({ me: initialMe }) {
     setRunOfShowNodes((ns) => ns.map((n) => (n.id === id ? { ...n, ...patch } : n)));
     await supabase.from("run_of_show_nodes").update(patch).eq("id", id);
   };
-  const addNode = async (eventId, title) => {
+  const addNode = async (eventId, { title, time_label, location, responsible, notes }) => {
     if (!requireAuth()) return;
     const existing = nodesByEvent[eventId] || [];
     const sortOrder = existing.length ? Math.max(...existing.map((n) => n.sort_order)) + 1 : 1;
     const { data } = await supabase
       .from("run_of_show_nodes")
-      .insert({ event_id: eventId, title, time_label: "", location: "", responsible: me.member_key, notes: "", sort_order: sortOrder })
+      .insert({
+        event_id: eventId, title, time_label: time_label || "", location: location || "",
+        responsible: responsible || me.member_key, notes: notes || "", sort_order: sortOrder,
+      })
       .select()
       .single();
     if (data) setRunOfShowNodes((ns) => [...ns, data]);
@@ -2969,6 +3237,7 @@ export default function BoardApp({ me: initialMe }) {
     dailyTasks,
     toggleBudgetTracking,
     updateEvent,
+    reorderEvent,
     updateLook,
     toggleLookOccasion,
     addLookCandidate,

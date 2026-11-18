@@ -146,7 +146,7 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
   }
 }
 const STATUS_META = {
-  pending: { label: "待定", color: "var(--pending)" },
+  pending: { label: "选择中", color: "var(--pending)" },
   to_buy: { label: "待购买", color: "var(--neutral2)" },
   purchased: { label: "已购买", color: "var(--good)" },
 };
@@ -487,6 +487,154 @@ function MultiSelectBar({ me, selMode, count, onToggleMode, onDelete }) {
   );
 }
 
+/* ============ Tags ============ */
+function tagLabel(tag, events) {
+  const ev = events.find((e) => e.id === tag);
+  return ev ? ev.en : tag;
+}
+function TagEditor({ tags, onChange, events, suggestions = [] }) {
+  const [input, setInput] = useState("");
+  const addTag = (t) => {
+    const v = (t || "").trim();
+    if (!v || tags.includes(v)) return;
+    onChange([...tags, v]);
+  };
+  const removeTag = (t) => onChange(tags.filter((x) => x !== t));
+  const pool = [...events.map((e) => e.id), ...suggestions].filter(
+    (t, i, arr) => arr.indexOf(t) === i && !tags.includes(t)
+  );
+  return (
+    <div className="field">
+      <label>标签</label>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: tags.length ? 8 : 0 }}>
+        {tags.map((t) => (
+          <button key={t} type="button" className="chip on" onClick={() => removeTag(t)}>
+            {tagLabel(t, events)} <Icon name="x" size={10} />
+          </button>
+        ))}
+      </div>
+      {pool.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, marginTop: tags.length ? 0 : 8 }}>
+          {pool.map((t) => (
+            <button key={t} type="button" className="chip" onClick={() => addTag(t)}>
+              <Icon name="plus" size={10} /> {tagLabel(t, events)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="输入自定义标签，回车添加"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addTag(input);
+              setInput("");
+            }
+          }}
+        />
+        <button
+          className="btn btn-ghost"
+          type="button"
+          onClick={() => {
+            addTag(input);
+            setInput("");
+          }}
+        >
+          添加
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============ Add item modal (tasks & daily share this) ============ */
+function AddItemModal({ open, onClose, onCreate, events, tagSuggestions, showAssignee, defaultAssignee, suggestedTag }) {
+  const profiles = useProfiles();
+  const [title, setTitle] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [tags, setTags] = useState([]);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [assignee, setAssignee] = useState(defaultAssignee);
+
+  useEffect(() => {
+    if (!open) return;
+    setTitle("");
+    setDeadline("");
+    setTags(suggestedTag ? [suggestedTag] : []);
+    setIsPrivate(false);
+    setNotes("");
+    setAssignee(defaultAssignee);
+  }, [open, suggestedTag, defaultAssignee]);
+
+  if (!open) return null;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onCreate({ title: title.trim(), deadline: deadline || null, tags, isPrivate, notes, assignee });
+    onClose();
+  };
+
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="新增">
+        <div className="drawer-head">
+          <h3>新增</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <form className="drawer-body" onSubmit={submit}>
+          <div className="field">
+            <label>标题</label>
+            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          {showAssignee && (
+            <div className="field">
+              <label>负责人</label>
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                {profiles.map((m) => (
+                  <option key={m.member_key} value={m.member_key}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="field">
+            <label>截止日期（可选）</label>
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </div>
+          <TagEditor tags={tags} onChange={setTags} events={events} suggestions={tagSuggestions} />
+          <div className="field">
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={(e) => setIsPrivate(e.target.checked)}
+                style={{ width: 14, height: 14 }}
+              />
+              仅自己可见（私密）
+            </label>
+          </div>
+          <div className="field">
+            <label>备注</label>
+            <textarea rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" type="submit" style={{ justifyContent: "center" }}>
+            创建
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
 /* ============ Drawer ============ */
 function Drawer({ selected, onClose, state }) {
   const photoInputRef = useRef();
@@ -497,6 +645,7 @@ function Drawer({ selected, onClose, state }) {
   let content = null,
     title = "",
     sub = "";
+  const tagSuggestionPool = [...new Set([...state.tasks, ...state.dailyTasks].flatMap((x) => x.tags || []))];
 
   const onPhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -509,7 +658,7 @@ function Drawer({ selected, onClose, state }) {
     const ev = state.events.find((x) => x.id === id);
     title = ev.name;
     sub = ev.en;
-    const relTasks = state.tasks.filter((t) => t.event_id === id);
+    const relTasks = state.tasks.filter((t) => (t.tags || []).includes(id));
     const relInventory = state.inventory.filter((i) => i.occasions.includes(id));
     const relVendors = state.vendors.filter((v) => v.event_id === id);
     content = (
@@ -814,7 +963,7 @@ function Drawer({ selected, onClose, state }) {
   if (type === "task") {
     const t = state.tasks.find((x) => x.id === id);
     title = t.title;
-    sub = (!t.event_id || t.event_id === "global" ? "全局" : state.events.find((e) => e.id === t.event_id)?.en) || "";
+    sub = (t.tags || []).map((tag) => tagLabel(tag, state.events)).join(" · ") || "无标签";
     content = (
       <>
         <div className="field">
@@ -844,16 +993,19 @@ function Drawer({ selected, onClose, state }) {
           </div>
         </div>
         <div className="field">
-          <label>所属活动</label>
-          <select value={t.event_id || "global"} onChange={(e) => state.updateTask(id, { event_id: e.target.value === "global" ? null : e.target.value })}>
-            <option value="global">全局</option>
-            {state.events.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.name}
-              </option>
-            ))}
-          </select>
+          <label>截止日期（可选）</label>
+          <input
+            type="date"
+            value={t.deadline || ""}
+            onChange={(e) => state.updateTask(id, { deadline: e.target.value || null })}
+          />
         </div>
+        <TagEditor
+          tags={t.tags || []}
+          onChange={(tags) => state.updateTask(id, { tags })}
+          events={state.events}
+          suggestions={tagSuggestionPool}
+        />
         <div className="field">
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
@@ -1062,6 +1214,12 @@ function Drawer({ selected, onClose, state }) {
             </select>
           </div>
         </div>
+        <TagEditor
+          tags={d.tags || []}
+          onChange={(tags) => state.updateDailyTask(id, { tags })}
+          events={state.events}
+          suggestions={tagSuggestionPool}
+        />
         <div className="field">
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
@@ -1389,7 +1547,6 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
 
 /* ============ Lookbook page ============ */
 function Lookbook({ state }) {
-  const [wearerFilter, setWearerFilter] = useState("all");
   const [builderDress, setBuilderDress] = useState(state.looks[0]?.id);
   const builderWearer = state.looks.find((d) => d.id === builderDress)?.wearer;
   const builderCats = ACC_CATS.filter((c) => state.accessories.some((a) => a.category === c.id && a.wearer === builderWearer));
@@ -1397,6 +1554,9 @@ function Lookbook({ state }) {
   useEffect(() => {
     if (!builderCats.find((c) => c.id === activeCat)) setActiveCat(builderCats[0]?.id);
   }, [builderWearer]);
+  useEffect(() => {
+    if (!state.looks.find((d) => d.id === builderDress)) setBuilderDress(state.looks[0]?.id);
+  }, [state.looks]);
   const [builderAcc, setBuilderAcc] = useState([]);
   const [lookOcc, setLookOcc] = useState(state.events[0]?.id);
 
@@ -1406,8 +1566,10 @@ function Lookbook({ state }) {
   const [tryonAcc, setTryonAcc] = useState([]);
   const [generating, setGenerating] = useState(false);
   const fileRef = useRef();
+  useEffect(() => {
+    if (!state.looks.find((d) => d.id === tryonDress)) setTryonDress(state.looks[0]?.id);
+  }, [state.looks]);
 
-  const [newLookWearer, setNewLookWearer] = useState("ch");
   const [newLookShape, setNewLookShape] = useState("aline");
   const [newAccPrice, setNewAccPrice] = useState("");
   const lookSel = useMultiSelect();
@@ -1446,10 +1608,11 @@ function Lookbook({ state }) {
   };
 
   const generate = () => {
+    const dress = state.looks.find((d) => d.id === tryonDress);
+    if (!dress) return;
     setGenerating(true);
     setTimeout(() => {
       setGenerating(false);
-      const dress = state.looks.find((d) => d.id === tryonDress);
       state.addTryon({
         lookName: dress.name,
         accessoryNames: tryonAcc.map((a) => state.accessories.find((x) => x.id === a).name),
@@ -1457,26 +1620,20 @@ function Lookbook({ state }) {
     }, 1200);
   };
 
-  if (!builderDress) return null;
-
-  return (
-    <div className="wrap">
-      <div className="section">
+  const renderLookZone = (wearerKey, zoneLabel) => {
+    const zoneLooks = state.looks.filter((d) => d.wearer === wearerKey);
+    return (
+      <div key={wearerKey} style={{ marginBottom: 24 }}>
         <div className="section-head">
-          <h2>造型候选</h2>
-          <span className="meta">点击卡片查看版型 / 面料 / 周期详情</span>
+          <h2 style={{ fontSize: 18 }}>{zoneLabel}</h2>
         </div>
         {state.me && (
           <QuickAddRow
-            placeholder="新造型名称，比如 Juliet"
+            placeholder={`新造型名称，比如 ${wearerKey === "ch" ? "Juliet" : "Windsor"}`}
             buttonLabel="添加造型"
             me={state.me}
-            onCreate={(name) => state.addLookCandidate({ name, wearer: newLookWearer, lookShape: newLookShape })}
+            onCreate={(name) => state.addLookCandidate({ name, wearer: wearerKey, lookShape: newLookShape })}
           >
-            <select value={newLookWearer} onChange={(e) => setNewLookWearer(e.target.value)}>
-              <option value="ch">她的</option>
-              <option value="hs">他的</option>
-            </select>
             <select value={newLookShape} onChange={(e) => setNewLookShape(e.target.value)}>
               {LOOK_SHAPES.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -1486,22 +1643,11 @@ function Lookbook({ state }) {
             </select>
           </QuickAddRow>
         )}
-        <MultiSelectBar me={state.me} selMode={lookSel.selMode} count={lookSel.selected.size} onToggleMode={lookSel.toggleMode} onDelete={bulkDeleteLooks} />
-        <div className="filterbar">
-          <button className={"chip" + (wearerFilter === "all" ? " on" : "")} onClick={() => setWearerFilter("all")}>
-            全部
-          </button>
-          <button className={"chip" + (wearerFilter === "ch" ? " on" : "")} onClick={() => setWearerFilter("ch")}>
-            她的造型
-          </button>
-          <button className={"chip" + (wearerFilter === "hs" ? " on" : "")} onClick={() => setWearerFilter("hs")}>
-            他的造型
-          </button>
-        </div>
-        <div className="grid g3">
-          {state.looks
-            .filter((d) => wearerFilter === "all" || d.wearer === wearerFilter)
-            .map((d) => (
+        {zoneLooks.length === 0 ? (
+          <div className="empty-state">还没有造型候选，用上面的框添加一个</div>
+        ) : (
+          <div className="grid g3">
+            {zoneLooks.map((d) => (
               <div
                 key={d.id}
                 className="card"
@@ -1539,7 +1685,22 @@ function Lookbook({ state }) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="wrap">
+      <div className="section">
+        <div className="section-head">
+          <h2>造型候选</h2>
+          <span className="meta">点击卡片查看版型 / 面料 / 周期详情</span>
         </div>
+        <MultiSelectBar me={state.me} selMode={lookSel.selMode} count={lookSel.selected.size} onToggleMode={lookSel.toggleMode} onDelete={bulkDeleteLooks} />
+        {renderLookZone("ch", "她的造型")}
+        {renderLookZone("hs", "他的造型")}
       </div>
 
       <div className="section">
@@ -1656,10 +1817,16 @@ function Lookbook({ state }) {
               </select>
             </div>
             {state.me && (
-              <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={saveLook}>
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%", justifyContent: "center" }}
+                onClick={saveLook}
+                disabled={!builderDress}
+              >
                 另存为造型卡
               </button>
             )}
+            {!builderDress && <p className="note" style={{ marginTop: 8 }}>先在上面添加一个造型候选，才能搭配配饰。</p>}
           </div>
         </div>
 
@@ -1734,9 +1901,10 @@ function Lookbook({ state }) {
                   ))}
               </div>
             </div>
-            <button className="btn btn-primary" onClick={generate} disabled={generating}>
+            <button className="btn btn-primary" onClick={generate} disabled={generating || !tryonDress}>
               <Icon name="sparkle" size={14} /> {generating ? "生成中…" : "生成试穿效果图"}
             </button>
+            {!tryonDress && <p className="note">先在上面添加一个造型候选，才能试穿。</p>}
             <p className="note">
               尚未配置真实 Virtual Try-On API Key（fal.ai）。当前展示的是粉色系模拟占位效果；接入真实接口后，此处将调用服务端 API 生成效果图并存入云端造型库。
             </p>
@@ -1890,14 +2058,29 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
 }
 
 /* ============ Tasks page ============ */
-function Tasks({ state, initialEventFilter }) {
-  const [evFilter, setEvFilter] = useState(initialEventFilter || "all");
+function TaskTagChips({ tags, events }) {
+  if (!tags || tags.length === 0) return <span className="tmeta">无标签</span>;
+  return (
+    <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {tags.map((t) => (
+        <span key={t} className="tmeta" style={{ background: "var(--champagne)", borderRadius: 999, padding: "2px 8px" }}>
+          {tagLabel(t, events)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function Tasks({ state, initialTag }) {
+  const [tagFilter, setTagFilter] = useState(initialTag || "all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const profiles = useProfiles();
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
+  const [addOpen, setAddOpen] = useState(false);
+  const tagPool = [...new Set([...state.events.map((e) => e.id), ...state.tasks.flatMap((t) => t.tags || [])])];
   // RLS already hides other people's private tasks server-side — no client-side privacy filter needed.
   const visible = state.tasks.filter((t) => {
-    if (evFilter !== "all" && (t.event_id || "global") !== evFilter) return false;
+    if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
     if (assigneeFilter !== "all" && t.assignee !== assigneeFilter) return false;
     return true;
   });
@@ -1914,20 +2097,23 @@ function Tasks({ state, initialEventFilter }) {
           <h2>待办管理</h2>
           <span className="meta">私密任务仅创建者本人可见</span>
         </div>
-        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
-        <QuickAddRow placeholder="新待办标题" buttonLabel="添加待办" me={state.me} onCreate={(title) => state.addTask(title)} />
         <div className="filterbar">
-          <button className={"chip" + (evFilter === "all" ? " on" : "")} onClick={() => setEvFilter("all")}>
-            全部活动
+          <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
+          {state.me && (
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={13} /> 添加待办
+            </button>
+          )}
+        </div>
+        <div className="filterbar">
+          <button className={"chip" + (tagFilter === "all" ? " on" : "")} onClick={() => setTagFilter("all")}>
+            全部标签
           </button>
-          {state.events.map((ev) => (
-            <button key={ev.id} className={"chip" + (evFilter === ev.id ? " on" : "")} onClick={() => setEvFilter(ev.id)}>
-              {ev.en}
+          {tagPool.map((tag) => (
+            <button key={tag} className={"chip" + (tagFilter === tag ? " on" : "")} onClick={() => setTagFilter(tag)}>
+              {tagLabel(tag, state.events)}
             </button>
           ))}
-          <button className={"chip" + (evFilter === "global" ? " on" : "")} onClick={() => setEvFilter("global")}>
-            全局
-          </button>
         </div>
         <div className="filterbar">
           <button className={"chip" + (assigneeFilter === "all" ? " on" : "")} onClick={() => setAssigneeFilter("all")}>
@@ -1976,7 +2162,8 @@ function Tasks({ state, initialEventFilter }) {
                     <Icon name="lock" size={14} />
                   </span>
                 )}
-                <span className="tmeta">{!t.event_id || t.event_id === "global" ? "全局" : state.events.find((e) => e.id === t.event_id)?.en}</span>
+                <TaskTagChips tags={t.tags} events={state.events} />
+                <DeadlineBadge deadline={t.deadline} done={done} />
                 <span className={"statuspill " + (t.status === "todo" ? "todo" : t.status === "doing" ? "doing" : "done")}>
                   {TASK_STATUS[t.status]}
                 </span>
@@ -1985,6 +2172,16 @@ function Tasks({ state, initialEventFilter }) {
           })}
         </div>
       </div>
+      <AddItemModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreate={state.addTask}
+        events={state.events}
+        tagSuggestions={tagPool}
+        showAssignee
+        defaultAssignee={state.me?.member_key}
+        suggestedTag={tagFilter !== "all" ? tagFilter : null}
+      />
     </div>
   );
 }
@@ -1992,10 +2189,16 @@ function Tasks({ state, initialEventFilter }) {
 /* ============ Daily page ============ */
 function Daily({ state }) {
   const [ownerFilter, setOwnerFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const profiles = useProfiles();
-  const [newDeadline, setNewDeadline] = useState("");
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
-  const visible = state.dailyTasks.filter((t) => ownerFilter === "all" || t.owner === ownerFilter);
+  const [addOpen, setAddOpen] = useState(false);
+  const tagPool = [...new Set([...state.events.map((e) => e.id), ...state.dailyTasks.flatMap((t) => t.tags || [])])];
+  const visible = state.dailyTasks.filter((t) => {
+    if (ownerFilter !== "all" && t.owner !== ownerFilter) return false;
+    if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
+    return true;
+  });
   const sorted = [...visible].sort((a, b) => {
     if (!a.deadline && !b.deadline) return 0;
     if (!a.deadline) return 1;
@@ -2014,25 +2217,26 @@ function Daily({ state }) {
       <div className="section">
         <div className="section-head">
           <h2>Daily</h2>
-          <span className="meta">跟婚礼无关的日常待办，一样支持私密和截止日期</span>
+          <span className="meta">跟婚礼无关的日常待办，一样支持私密、标签和截止日期</span>
         </div>
-        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
-        <QuickAddRow
-          placeholder="新的日常待办"
-          buttonLabel="添加"
-          me={state.me}
-          onCreate={(title) => {
-            state.addDailyTask({ title, deadline: newDeadline || null });
-            setNewDeadline("");
-          }}
-        >
-          <input
-            type="date"
-            value={newDeadline}
-            onChange={(e) => setNewDeadline(e.target.value)}
-            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13.5, background: "var(--blush)", color: "var(--plum)" }}
-          />
-        </QuickAddRow>
+        <div className="filterbar">
+          <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
+          {state.me && (
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={13} /> 添加
+            </button>
+          )}
+        </div>
+        <div className="filterbar">
+          <button className={"chip" + (tagFilter === "all" ? " on" : "")} onClick={() => setTagFilter("all")}>
+            全部标签
+          </button>
+          {tagPool.map((tag) => (
+            <button key={tag} className={"chip" + (tagFilter === tag ? " on" : "")} onClick={() => setTagFilter(tag)}>
+              {tagLabel(tag, state.events)}
+            </button>
+          ))}
+        </div>
         <div className="filterbar">
           <button className={"chip" + (ownerFilter === "all" ? " on" : "")} onClick={() => setOwnerFilter("all")}>
             全部
@@ -2080,12 +2284,23 @@ function Daily({ state }) {
                     <Icon name="lock" size={14} />
                   </span>
                 )}
+                <TaskTagChips tags={t.tags} events={state.events} />
                 <DeadlineBadge deadline={t.deadline} done={done} />
               </div>
             );
           })}
         </div>
       </div>
+      <AddItemModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreate={state.addDailyTask}
+        events={state.events}
+        tagSuggestions={tagPool}
+        showAssignee={false}
+        defaultAssignee={state.me?.member_key}
+        suggestedTag={tagFilter !== "all" ? tagFilter : null}
+      />
     </div>
     </div>
   );
@@ -2584,15 +2799,18 @@ export default function BoardApp({ me: initialMe }) {
     await updateTask(id, { status: nowDone ? "done" : "todo" });
     if (!t.is_private) logActivity(`把待办「${t.title}」标记为${nowDone ? "已完成" : "未完成"}`);
   };
-  const addTask = async (title) => {
+  const addTask = async ({ title, deadline, tags, isPrivate, notes, assignee }) => {
     if (!requireAuth()) return;
     const { data } = await supabase
       .from("tasks")
-      .insert({ title, assignee: me.member_key, owner: me.member_key, event_id: null, status: "todo", is_private: false, notes: "" })
+      .insert({
+        title, deadline: deadline || null, tags: tags || [], assignee: assignee || me.member_key,
+        owner: me.member_key, event_id: null, status: "todo", is_private: !!isPrivate, notes: notes || "",
+      })
       .select()
       .single();
     if (data) setTasks((ts) => [data, ...ts]);
-    logActivity(`添加了待办「${title}」`);
+    if (!isPrivate) logActivity(`添加了待办「${title}」`);
   };
   const deleteTask = async (id) => {
     if (!requireAuth()) return;
@@ -2680,15 +2898,18 @@ export default function BoardApp({ me: initialMe }) {
     if (data) setTryonResults((rs) => [data, ...rs]);
   };
 
-  const addDailyTask = async ({ title, deadline }) => {
+  const addDailyTask = async ({ title, deadline, tags, isPrivate, notes }) => {
     if (!requireAuth()) return;
     const { data } = await supabase
       .from("daily_tasks")
-      .insert({ title, deadline: deadline || null, owner: me.member_key, status: "todo", is_private: false, notes: "" })
+      .insert({
+        title, deadline: deadline || null, tags: tags || [], owner: me.member_key,
+        status: "todo", is_private: !!isPrivate, notes: notes || "",
+      })
       .select()
       .single();
     if (data) setDailyTasks((ts) => [...ts, data]);
-    logActivity(`添加了日常待办「${title}」`);
+    if (!isPrivate) logActivity(`添加了日常待办「${title}」`);
   };
   const updateDailyTask = async (id, patch) => {
     if (!requireAuth()) return;
@@ -2798,7 +3019,7 @@ export default function BoardApp({ me: initialMe }) {
         }}
       />
       {tab === "overview" && <Overview state={state} setTab={setTab} setInvFilter={setInvFilter} goToRunOfShow={goToRunOfShow} />}
-      {tab === "tasks" && <Tasks state={state} initialEventFilter={eventJump} />}
+      {tab === "tasks" && <Tasks state={state} initialTag={eventJump} />}
       {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} initialEventFilter={eventJump} />}
       {tab === "lookbook" && <Lookbook state={state} />}
       {tab === "runofshow" && <RunOfShow state={state} evTab={rosTab} setEvTab={setRosTab} />}

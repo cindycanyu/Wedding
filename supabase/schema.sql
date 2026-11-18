@@ -168,14 +168,18 @@ create table if not exists public.inventory_photos (
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  event_id text references public.events (id),   -- null/'global' = applies to everything
+  event_id text references public.events (id),   -- deprecated, kept for old rows; UI now uses tags
   assignee text not null check (assignee in ('hs','ch')),
   status text not null default 'todo' check (status in ('todo','doing','done')),
   is_private boolean not null default false,
   owner text not null check (owner in ('hs','ch')),
   notes text not null default '',
+  deadline date,
+  tags text[] not null default '{}',   -- free-form; an event's id (e.g. 'sf') is also a valid tag
   updated_at timestamptz not null default now()
 );
+alter table public.tasks add column if not exists deadline date;
+alter table public.tasks add column if not exists tags text[] not null default '{}';
 
 create table if not exists public.vendors (
   id text primary key,
@@ -213,8 +217,10 @@ create table if not exists public.daily_tasks (
   is_private boolean not null default false,
   owner text not null check (owner in ('hs','ch')),
   notes text not null default '',
+  tags text[] not null default '{}',
   updated_at timestamptz not null default now()
 );
+alter table public.daily_tasks add column if not exists tags text[] not null default '{}';
 
 -- A short, public activity feed ("H.S. just added look Oxford Midnight") for
 -- the sidebar. Append-only: no update policy, and anyone can read it since

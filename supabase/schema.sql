@@ -142,14 +142,21 @@ create table if not exists public.tryon_results (
 create table if not exists public.inventory_items (
   id text primary key,
   name text not null,
-  status text not null default 'to_buy' check (status in ('to_buy','purchased')),
+  status text not null default 'to_buy' check (status in ('pending','to_buy','purchased')),
   price_usd numeric not null default 0,
   occasions text[] not null default '{}',
   channel text not null default '',
   added_by text check (added_by in ('hs','ch')),
   notes text not null default '',
+  look_id text references public.looks (id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+-- These two only do something on a project that already had this table
+-- before "pending" and look_id existed; harmless no-ops on a fresh one.
+alter table public.inventory_items add column if not exists look_id text references public.looks (id) on delete set null;
+alter table public.inventory_items drop constraint if exists inventory_items_status_check;
+alter table public.inventory_items add constraint inventory_items_status_check check (status in ('pending','to_buy','purchased'));
 
 create table if not exists public.inventory_photos (
   id uuid primary key default gen_random_uuid(),

@@ -109,6 +109,28 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M10 20a2 2 0 0 0 4 0" />
         </svg>
       );
+    case "eye":
+      return (
+        <svg {...common}>
+          <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+    case "eye-off":
+      return (
+        <svg {...common}>
+          <path d="M2 12s4-7 10-7c2 0 3.6.6 5 1.5M22 12s-1.4 2.6-3.6 4.5M9.5 9.8a3 3 0 0 0 4.2 4.2" />
+          <path d="M3 3l18 18" />
+        </svg>
+      );
+    case "cart":
+      return (
+        <svg {...common}>
+          <path d="M3 4h2l2.4 12.4a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L20 8H6" />
+          <circle cx="9" cy="20" r="1.3" />
+          <circle cx="17" cy="20" r="1.3" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -124,10 +146,11 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
   }
 }
 const STATUS_META = {
+  pending: { label: "待定", color: "var(--pending)" },
   to_buy: { label: "待购买", color: "var(--neutral2)" },
   purchased: { label: "已购买", color: "var(--good)" },
 };
-const STATUS_ICON = { purchased: "check", to_buy: "question" };
+const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
 const RATE = 6.7; // fixed USD->CNY rate; good enough for a personal budget estimate
 const ACC_CATS = [
@@ -486,29 +509,57 @@ function Drawer({ selected, onClose, state }) {
     const ev = state.events.find((x) => x.id === id);
     title = ev.name;
     sub = ev.en;
+    const relTasks = state.tasks.filter((t) => t.event_id === id);
+    const relInventory = state.inventory.filter((i) => i.occasions.includes(id));
+    const relVendors = state.vendors.filter((v) => v.event_id === id);
     content = (
       <>
         <div className="drawer-cover">
           <Cover type={ev.cover} />
         </div>
-        <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>{ev.description}</p>
-        <div className="kv">
-          <span className="k">状态</span>
-          <b>{ev.status_label}</b>
+        <div className="field">
+          <label>名称</label>
+          <input value={ev.name} onChange={(e) => state.updateEvent(id, { name: e.target.value })} />
         </div>
-        <div className="kv">
-          <span className="k">日期 / 地点</span>
-          <b>{ev.date_label}</b>
-        </div>
-        {ev.witness_name && (
-          <div className="kv">
-            <span className="k">证婚人</span>
-            <b>{ev.witness_name}</b>
+        <div className="rowfields">
+          <div className="field">
+            <label>英文 / 简称</label>
+            <input value={ev.en} onChange={(e) => state.updateEvent(id, { en: e.target.value })} />
           </div>
-        )}
+          <div className="field">
+            <label>状态标签</label>
+            <input value={ev.status_label} onChange={(e) => state.updateEvent(id, { status_label: e.target.value })} />
+          </div>
+        </div>
+        <div className="field">
+          <label>日期 / 地点</label>
+          <input value={ev.date_label} onChange={(e) => state.updateEvent(id, { date_label: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>说明</label>
+          <textarea rows="3" value={ev.description} onChange={(e) => state.updateEvent(id, { description: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>证婚人（没有就留空）</label>
+          <input value={ev.witness_name || ""} onChange={(e) => state.updateEvent(id, { witness_name: e.target.value || null })} />
+        </div>
         <div className="field">
           <label>整体进度</label>
           <RingProgress value={ev.progress} size={60} />
+        </div>
+        <div className="field">
+          <label>这场活动相关的内容</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="chip" onClick={() => state.jumpToEventSection("tasks", id)}>
+              {relTasks.length} 个待办
+            </button>
+            <button className="chip" onClick={() => state.jumpToEventSection("inventory", id)}>
+              {relInventory.length} 件物品
+            </button>
+            <button className="chip" onClick={() => state.jumpToEventSection("vendors", id)}>
+              {relVendors.length} 个供应商
+            </button>
+          </div>
         </div>
         <div className="field">
           <label>预算追踪</label>
@@ -1105,7 +1156,7 @@ function ActivityPanel({ open, onClose, log }) {
 }
 
 /* ============ Topbar ============ */
-function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut, onToggleActivity }) {
+function Topbar({ tab, setTab, me, onSignOut, onToggleActivity }) {
   const tabs = [
     ["overview", "总览"],
     ["tasks", "待办"],
@@ -1132,13 +1183,6 @@ function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut, onToggleA
             </button>
           ))}
         </div>
-        <button
-          className={"chip" + (adminView ? " on" : "")}
-          onClick={() => setAdminView(!adminView)}
-          title="切换是否在卡片上直接显示价格"
-        >
-          <Icon name={adminView ? "check" : "lock"} size={11} /> 管理员视图
-        </button>
         <button className="chip" onClick={onToggleActivity} title="最近动态">
           <Icon name="bell" size={12} /> 动态
         </button>
@@ -1367,6 +1411,15 @@ function Lookbook({ state }) {
   const [newLookShape, setNewLookShape] = useState("aline");
   const [newAccPrice, setNewAccPrice] = useState("");
   const lookSel = useMultiSelect();
+  const [priceRevealed, setPriceRevealed] = useState(() => new Set());
+  const toggleLookPriceReveal = (id, e) => {
+    e.stopPropagation();
+    setPriceRevealed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
   const bulkDeleteLooks = async () => {
     if (lookSel.selected.size === 0) return;
     if (!window.confirm(`确定删除选中的 ${lookSel.selected.size} 个造型候选吗？`)) return;
@@ -1449,10 +1502,15 @@ function Lookbook({ state }) {
           {state.looks
             .filter((d) => wearerFilter === "all" || d.wearer === wearerFilter)
             .map((d) => (
-              <button
+              <div
                 key={d.id}
                 className="card"
+                role="button"
+                tabIndex={0}
                 onClick={() => (lookSel.selMode ? lookSel.toggle(d.id) : state.openDrawer("dress", d.id))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") (lookSel.selMode ? lookSel.toggle(d.id) : state.openDrawer("dress", d.id));
+                }}
               >
                 <div className="card-cover">
                   <LookSilhouette look={d.look_shape} />
@@ -1462,7 +1520,16 @@ function Lookbook({ state }) {
                     </span>
                   )}
                   <OccChips occasions={d.occasions} />
-                  <span className="price-tag tabular">${Number(d.price).toLocaleString()}</span>
+                  <span
+                    className="price-tag"
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => toggleLookPriceReveal(d.id, e)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
+                  >
+                    <Icon name={priceRevealed.has(d.id) ? "eye" : "eye-off"} size={12} />
+                    {priceRevealed.has(d.id) && <span className="tabular">${Number(d.price).toLocaleString()}</span>}
+                  </span>
                 </div>
                 <div className="card-body">
                   <div className="card-title">{d.name}</div>
@@ -1470,7 +1537,7 @@ function Lookbook({ state }) {
                     {d.subtitle} · {d.availability}
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
         </div>
       </div>
@@ -1709,9 +1776,18 @@ function Lookbook({ state }) {
 }
 
 /* ============ Inventory page ============ */
-function Inventory({ state, invFilter, setInvFilter, adminView }) {
-  const [occFilter, setOccFilter] = useState("all");
+function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
+  const [occFilter, setOccFilter] = useState(initialEventFilter || "all");
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
+  const [revealed, setRevealed] = useState(() => new Set());
+  const toggleReveal = (id, e) => {
+    e.stopPropagation();
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
   const items = state.inventory.filter(
     (i) => (invFilter === "all" || i.status === invFilter) && (occFilter === "all" || i.occasions.includes(occFilter))
   );
@@ -1756,11 +1832,17 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
           <div className="grid g4">
             {items.map((it) => {
               const photos = state.photosByItem[it.id] || [];
+              const isRevealed = revealed.has(it.id);
               return (
-                <button
+                <div
                   key={it.id}
                   className="card"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => (selMode ? toggle(it.id) : state.openDrawer("inventory", it.id))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") (selMode ? toggle(it.id) : state.openDrawer("inventory", it.id));
+                  }}
                 >
                   <div className="card-cover" style={{ background: "#F7EFE4", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {photos.length > 0 ? (
@@ -1779,19 +1861,25 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
                   <div className="card-body">
                     <div className="card-title">{it.name}</div>
                     <div className="card-sub">
-                      {adminView ? (
-                        <span className="tabular">
-                          ${Number(it.price_usd).toLocaleString()} · ¥
-                          {(it.price_usd * RATE).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </span>
-                      ) : (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          <Icon name="lock" size={10} /> 价格已隐藏 · 点击查看
-                        </span>
-                      )}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => toggleReveal(it.id, e)}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
+                      >
+                        <Icon name={isRevealed ? "eye" : "eye-off"} size={12} />
+                        {isRevealed ? (
+                          <span className="tabular">
+                            ${Number(it.price_usd).toLocaleString()} · ¥
+                            {(it.price_usd * RATE).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                        ) : (
+                          "价格已隐藏"
+                        )}
+                      </span>
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1802,8 +1890,8 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
 }
 
 /* ============ Tasks page ============ */
-function Tasks({ state }) {
-  const [evFilter, setEvFilter] = useState("all");
+function Tasks({ state, initialEventFilter }) {
+  const [evFilter, setEvFilter] = useState(initialEventFilter || "all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const profiles = useProfiles();
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
@@ -2055,8 +2143,9 @@ function RunOfShow({ state, evTab, setEvTab }) {
 }
 
 /* ============ Vendors & Budget page ============ */
-function VendorsBudget({ state }) {
+function VendorsBudget({ state, initialEventFilter }) {
   const [groupBy, setGroupBy] = useState("event");
+  const [vendorEvFilter, setVendorEvFilter] = useState(initialEventFilter || "all");
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const bulkDelete = async () => {
     if (selected.size === 0) return;
@@ -2064,6 +2153,9 @@ function VendorsBudget({ state }) {
     for (const id of selected) await state.deleteVendor(id);
     reset();
   };
+  const visibleVendors = state.vendors.filter(
+    (v) => vendorEvFilter === "all" || (v.event_id || "global") === vendorEvFilter
+  );
   return (
     <div className="wrap">
       <div className="section">
@@ -2073,8 +2165,21 @@ function VendorsBudget({ state }) {
         </div>
         <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
         <QuickAddRow placeholder="新供应商名称" buttonLabel="添加供应商" me={state.me} onCreate={(name) => state.addVendor(name)} />
+        <div className="filterbar">
+          <button className={"chip" + (vendorEvFilter === "all" ? " on" : "")} onClick={() => setVendorEvFilter("all")}>
+            全部活动
+          </button>
+          {state.events.map((ev) => (
+            <button key={ev.id} className={"chip" + (vendorEvFilter === ev.id ? " on" : "")} onClick={() => setVendorEvFilter(ev.id)}>
+              {ev.en}
+            </button>
+          ))}
+          <button className={"chip" + (vendorEvFilter === "global" ? " on" : "")} onClick={() => setVendorEvFilter("global")}>
+            全局
+          </button>
+        </div>
         <div className="grid g3">
-          {state.vendors.map((v) => {
+          {visibleVendors.map((v) => {
             const dleft = daysUntil(v.deadline);
             return (
               <button
@@ -2230,9 +2335,9 @@ export default function BoardApp({ me: initialMe }) {
   const [tab, setTab] = useState("overview");
   const [rosTab, setRosTab] = useState("sf");
   const [invFilter, setInvFilter] = useState("all");
-  const [adminView, setAdminView] = useState(false);
   const [selected, setSelected] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [eventJump, setEventJump] = useState("all");
 
   const requireAuth = useCallback(() => {
     if (!me) {
@@ -2351,6 +2456,15 @@ export default function BoardApp({ me: initialMe }) {
     if (!requireAuth()) return;
     setLooks((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     await supabase.from("looks").update(patch).eq("id", id);
+    // Keep the linked inventory row (created when this look was added) in sync on the
+    // two fields that matter for budgeting — name and price.
+    if ("price" in patch || "name" in patch) {
+      const linkedPatch = {};
+      if ("price" in patch) linkedPatch.price_usd = patch.price;
+      if ("name" in patch) linkedPatch.name = patch.name;
+      setInventory((is) => is.map((i) => (i.look_id === id ? { ...i, ...linkedPatch } : i)));
+      await supabase.from("inventory_items").update(linkedPatch).eq("look_id", id);
+    }
   };
   const toggleLookOccasion = async (id, evId) => {
     if (!requireAuth()) return;
@@ -2370,6 +2484,15 @@ export default function BoardApp({ me: initialMe }) {
     setLooks((ls) => [...ls, row]);
     const { data } = await supabase.from("looks").insert(row).select().single();
     if (data) setLooks((ls) => ls.map((l) => (l.id === id ? data : l)));
+    // Linked so it shows up in 物品清单 too — "待定" since adding a candidate isn't
+    // a purchase decision yet. updateLook keeps the name/price in sync afterward.
+    const invId = crypto.randomUUID();
+    const invRow = {
+      id: invId, name, status: "pending", price_usd: 0, occasions: [],
+      channel: "", added_by: me.member_key, notes: "", look_id: id,
+    };
+    setInventory((is) => [...is, invRow]);
+    await supabase.from("inventory_items").insert(invRow);
     logActivity(`添加了造型候选「${name}」`);
   };
   const deleteLookCandidate = async (id) => {
@@ -2597,6 +2720,11 @@ export default function BoardApp({ me: initialMe }) {
     setRosTab(evId);
     setTab("runofshow");
   };
+  const jumpToEventSection = (tabName, evId) => {
+    setEventJump(evId);
+    setTab(tabName);
+    closeDrawer();
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -2650,6 +2778,7 @@ export default function BoardApp({ me: initialMe }) {
     toggleDailyTaskDone,
     deleteDailyTask,
     openDrawer,
+    jumpToEventSection,
   };
 
   if (loading) {
@@ -2662,8 +2791,6 @@ export default function BoardApp({ me: initialMe }) {
         tab={tab}
         setTab={setTab}
         me={me}
-        adminView={adminView}
-        setAdminView={setAdminView}
         onSignOut={handleSignOut}
         onToggleActivity={() => {
           setActivityOpen((v) => !v);
@@ -2671,11 +2798,11 @@ export default function BoardApp({ me: initialMe }) {
         }}
       />
       {tab === "overview" && <Overview state={state} setTab={setTab} setInvFilter={setInvFilter} goToRunOfShow={goToRunOfShow} />}
-      {tab === "tasks" && <Tasks state={state} />}
-      {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} adminView={adminView} />}
+      {tab === "tasks" && <Tasks state={state} initialEventFilter={eventJump} />}
+      {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} initialEventFilter={eventJump} />}
       {tab === "lookbook" && <Lookbook state={state} />}
       {tab === "runofshow" && <RunOfShow state={state} evTab={rosTab} setEvTab={setRosTab} />}
-      {tab === "vendors" && <VendorsBudget state={state} />}
+      {tab === "vendors" && <VendorsBudget state={state} initialEventFilter={eventJump} />}
       {tab === "daily" && <Daily state={state} />}
       <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />

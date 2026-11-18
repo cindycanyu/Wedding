@@ -102,6 +102,13 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7" />
         </svg>
       );
+    case "bell":
+      return (
+        <svg {...common}>
+          <path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3z" />
+          <path d="M10 20a2 2 0 0 0 4 0" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -122,7 +129,7 @@ const STATUS_META = {
 };
 const STATUS_ICON = { purchased: "check", to_buy: "question" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
-const RATE = 7.2;
+const RATE = 6.7; // fixed USD->CNY rate; good enough for a personal budget estimate
 const ACC_CATS = [
   { id: "veil", name: "头纱" },
   { id: "overskirt", name: "可拆裙摆" },
@@ -415,6 +422,47 @@ function DeleteButton({ onDelete, label = "删除" }) {
     </button>
   );
 }
+function SelectCheckbox({ checked }) {
+  return (
+    <span className={"selectbox" + (checked ? " on" : "")}>
+      {checked && <Icon name="check" size={11} color="#fff" />}
+    </span>
+  );
+}
+function useMultiSelect() {
+  const [selMode, setSelMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const toggle = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const toggleMode = () => {
+    setSelMode((v) => !v);
+    setSelected(new Set());
+  };
+  const reset = () => {
+    setSelMode(false);
+    setSelected(new Set());
+  };
+  return { selMode, selected, toggle, toggleMode, reset };
+}
+function MultiSelectBar({ me, selMode, count, onToggleMode, onDelete }) {
+  if (!me) return null;
+  return (
+    <div className="filterbar" style={{ marginBottom: 8 }}>
+      <button className={"chip" + (selMode ? " on" : "")} onClick={onToggleMode}>
+        {selMode ? "取消多选" : "多选删除"}
+      </button>
+      {selMode && count > 0 && (
+        <button className="btn btn-primary" style={{ background: "var(--critical)" }} onClick={onDelete}>
+          <Icon name="trash" size={13} /> 删除选中（{count}）
+        </button>
+      )}
+    </div>
+  );
+}
 
 /* ============ Drawer ============ */
 function Drawer({ selected, onClose, state }) {
@@ -673,8 +721,12 @@ function Drawer({ selected, onClose, state }) {
             />
           </div>
           <div className="field">
-            <label>折合 CNY（汇率 {RATE}）</label>
-            <input disabled value={(it.price_usd * RATE).toLocaleString(undefined, { maximumFractionDigits: 0 })} />
+            <label>价格 (CNY · 汇率 {RATE})</label>
+            <input
+              type="number"
+              value={Math.round(it.price_usd * RATE)}
+              onChange={(e) => state.updateInventory(id, { price_usd: (+e.target.value || 0) / RATE })}
+            />
           </div>
         </div>
         <div className="field">
@@ -1007,8 +1059,53 @@ function Drawer({ selected, onClose, state }) {
   );
 }
 
+/* ============ Activity feed ============ */
+function timeAgo(iso) {
+  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return "刚刚";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  return `${Math.round(hr / 24)} 天前`;
+}
+function ActivityPanel({ open, onClose, log }) {
+  const profiles = useProfiles();
+  if (!open) return null;
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="最近动态">
+        <div className="drawer-head">
+          <h3>最近动态</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <div className="drawer-body">
+          {log.length === 0 && <div className="empty-state">还没有动态</div>}
+          {log.map((a) => {
+            const m = memberOf(profiles, a.actor);
+            return (
+              <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Avatar id={a.actor} size={26} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, lineHeight: 1.5 }}>
+                    <b>{m?.name || a.actor}</b> {a.summary}
+                  </p>
+                  <span className="tmeta">{timeAgo(a.created_at)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ============ Topbar ============ */
-function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut }) {
+function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut, onToggleActivity }) {
   const tabs = [
     ["overview", "总览"],
     ["tasks", "待办"],
@@ -1041,6 +1138,9 @@ function Topbar({ tab, setTab, me, adminView, setAdminView, onSignOut }) {
           title="切换是否在卡片上直接显示价格"
         >
           <Icon name={adminView ? "check" : "lock"} size={11} /> 管理员视图
+        </button>
+        <button className="chip" onClick={onToggleActivity} title="最近动态">
+          <Icon name="bell" size={12} /> 动态
         </button>
         <div className="identity">
           {me ? (
@@ -1099,10 +1199,6 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
       </div>
 
       <div className="section">
-        <div className="section-head">
-          <h2>三场活动</h2>
-          <span className="meta">点击卡片查看详情</span>
-        </div>
         <div className="grid g3">
           {state.events.map((ev) => (
             <button key={ev.id} className="card" onClick={() => state.openDrawer("event", ev.id)}>
@@ -1270,6 +1366,13 @@ function Lookbook({ state }) {
   const [newLookWearer, setNewLookWearer] = useState("ch");
   const [newLookShape, setNewLookShape] = useState("aline");
   const [newAccPrice, setNewAccPrice] = useState("");
+  const lookSel = useMultiSelect();
+  const bulkDeleteLooks = async () => {
+    if (lookSel.selected.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${lookSel.selected.size} 个造型候选吗？`)) return;
+    for (const id of lookSel.selected) await state.deleteLookCandidate(id);
+    lookSel.reset();
+  };
 
   const toggleBuilderAcc = (aid) => setBuilderAcc((prev) => (prev.includes(aid) ? prev.filter((x) => x !== aid) : [...prev, aid]));
   const toggleTryonAcc = (aid) => setTryonAcc((prev) => (prev.includes(aid) ? prev.filter((x) => x !== aid) : [...prev, aid]));
@@ -1330,6 +1433,7 @@ function Lookbook({ state }) {
             </select>
           </QuickAddRow>
         )}
+        <MultiSelectBar me={state.me} selMode={lookSel.selMode} count={lookSel.selected.size} onToggleMode={lookSel.toggleMode} onDelete={bulkDeleteLooks} />
         <div className="filterbar">
           <button className={"chip" + (wearerFilter === "all" ? " on" : "")} onClick={() => setWearerFilter("all")}>
             全部
@@ -1345,9 +1449,18 @@ function Lookbook({ state }) {
           {state.looks
             .filter((d) => wearerFilter === "all" || d.wearer === wearerFilter)
             .map((d) => (
-              <button key={d.id} className="card" onClick={() => state.openDrawer("dress", d.id)}>
+              <button
+                key={d.id}
+                className="card"
+                onClick={() => (lookSel.selMode ? lookSel.toggle(d.id) : state.openDrawer("dress", d.id))}
+              >
                 <div className="card-cover">
                   <LookSilhouette look={d.look_shape} />
+                  {lookSel.selMode && (
+                    <span className="corner-ring">
+                      <SelectCheckbox checked={lookSel.selected.has(d.id)} />
+                    </span>
+                  )}
                   <OccChips occasions={d.occasions} />
                   <span className="price-tag tabular">${Number(d.price).toLocaleString()}</span>
                 </div>
@@ -1598,9 +1711,16 @@ function Lookbook({ state }) {
 /* ============ Inventory page ============ */
 function Inventory({ state, invFilter, setInvFilter, adminView }) {
   const [occFilter, setOccFilter] = useState("all");
+  const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const items = state.inventory.filter(
     (i) => (invFilter === "all" || i.status === invFilter) && (occFilter === "all" || i.occasions.includes(occFilter))
   );
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${selected.size} 件物品吗？`)) return;
+    for (const id of selected) await state.deleteInventoryItem(id);
+    reset();
+  };
   return (
     <div className="wrap">
       <div className="section">
@@ -1608,6 +1728,7 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
           <h2>物品与资产清单</h2>
           <span className="meta">未确认购买的物品不计入已购预算</span>
         </div>
+        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
         <QuickAddRow placeholder="新物品名称" buttonLabel="添加物品" me={state.me} onCreate={(name) => state.addInventoryItem(name)} />
         <div className="filterbar">
           <button className={"chip" + (invFilter === "all" ? " on" : "")} onClick={() => setInvFilter("all")}>
@@ -1636,7 +1757,11 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
             {items.map((it) => {
               const photos = state.photosByItem[it.id] || [];
               return (
-                <button key={it.id} className="card" onClick={() => state.openDrawer("inventory", it.id)}>
+                <button
+                  key={it.id}
+                  className="card"
+                  onClick={() => (selMode ? toggle(it.id) : state.openDrawer("inventory", it.id))}
+                >
                   <div className="card-cover" style={{ background: "#F7EFE4", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {photos.length > 0 ? (
                       <img src={photos[0].url} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
@@ -1644,6 +1769,11 @@ function Inventory({ state, invFilter, setInvFilter, adminView }) {
                       <Icon name={STATUS_ICON[it.status]} size={34} color={STATUS_META[it.status].color} />
                     )}
                     <span className={"corner-badge badge " + it.status}>{STATUS_META[it.status].label}</span>
+                    {selMode && (
+                      <span className="corner-ring">
+                        <SelectCheckbox checked={selected.has(it.id)} />
+                      </span>
+                    )}
                     <OccChips occasions={it.occasions} />
                   </div>
                   <div className="card-body">
@@ -1676,12 +1806,19 @@ function Tasks({ state }) {
   const [evFilter, setEvFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const profiles = useProfiles();
+  const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   // RLS already hides other people's private tasks server-side — no client-side privacy filter needed.
   const visible = state.tasks.filter((t) => {
     if (evFilter !== "all" && (t.event_id || "global") !== evFilter) return false;
     if (assigneeFilter !== "all" && t.assignee !== assigneeFilter) return false;
     return true;
   });
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${selected.size} 条待办吗？`)) return;
+    for (const id of selected) await state.deleteTask(id);
+    reset();
+  };
   return (
     <div className="wrap">
       <div className="section">
@@ -1689,6 +1826,7 @@ function Tasks({ state }) {
           <h2>待办管理</h2>
           <span className="meta">私密任务仅创建者本人可见</span>
         </div>
+        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
         <QuickAddRow placeholder="新待办标题" buttonLabel="添加待办" me={state.me} onCreate={(title) => state.addTask(title)} />
         <div className="filterbar">
           <button className={"chip" + (evFilter === "all" ? " on" : "")} onClick={() => setEvFilter("all")}>
@@ -1724,11 +1862,12 @@ function Tasks({ state }) {
                 role="button"
                 tabIndex={0}
                 style={{ borderLeft: "6px solid " + (memberOf(profiles, t.assignee)?.bg_color || "var(--line)") }}
-                onClick={() => state.openDrawer("task", t.id)}
+                onClick={() => (selMode ? toggle(t.id) : state.openDrawer("task", t.id))}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") state.openDrawer("task", t.id);
+                  if (e.key === "Enter" || e.key === " ") (selMode ? toggle(t.id) : state.openDrawer("task", t.id));
                 }}
               >
+                {selMode && <SelectCheckbox checked={selected.has(t.id)} />}
                 <button
                   className="checkdot"
                   aria-label={done ? "标记为未完成" : "标记为已完成"}
@@ -1767,6 +1906,7 @@ function Daily({ state }) {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const profiles = useProfiles();
   const [newDeadline, setNewDeadline] = useState("");
+  const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const visible = state.dailyTasks.filter((t) => ownerFilter === "all" || t.owner === ownerFilter);
   const sorted = [...visible].sort((a, b) => {
     if (!a.deadline && !b.deadline) return 0;
@@ -1774,13 +1914,21 @@ function Daily({ state }) {
     if (!b.deadline) return -1;
     return a.deadline.localeCompare(b.deadline);
   });
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${selected.size} 条日常待办吗？`)) return;
+    for (const id of selected) await state.deleteDailyTask(id);
+    reset();
+  };
   return (
+    <div className="daily-theme">
     <div className="wrap">
       <div className="section">
         <div className="section-head">
           <h2>Daily</h2>
           <span className="meta">跟婚礼无关的日常待办，一样支持私密和截止日期</span>
         </div>
+        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
         <QuickAddRow
           placeholder="新的日常待办"
           buttonLabel="添加"
@@ -1818,11 +1966,12 @@ function Daily({ state }) {
                 role="button"
                 tabIndex={0}
                 style={{ borderLeft: "6px solid " + (memberOf(profiles, t.owner)?.bg_color || "var(--line)") }}
-                onClick={() => state.openDrawer("daily", t.id)}
+                onClick={() => (selMode ? toggle(t.id) : state.openDrawer("daily", t.id))}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") state.openDrawer("daily", t.id);
+                  if (e.key === "Enter" || e.key === " ") (selMode ? toggle(t.id) : state.openDrawer("daily", t.id));
                 }}
               >
+                {selMode && <SelectCheckbox checked={selected.has(t.id)} />}
                 <button
                   className="checkdot"
                   aria-label={done ? "标记为未完成" : "标记为已完成"}
@@ -1849,6 +1998,7 @@ function Daily({ state }) {
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -1907,6 +2057,13 @@ function RunOfShow({ state, evTab, setEvTab }) {
 /* ============ Vendors & Budget page ============ */
 function VendorsBudget({ state }) {
   const [groupBy, setGroupBy] = useState("event");
+  const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${selected.size} 个供应商吗？`)) return;
+    for (const id of selected) await state.deleteVendor(id);
+    reset();
+  };
   return (
     <div className="wrap">
       <div className="section">
@@ -1914,12 +2071,23 @@ function VendorsBudget({ state }) {
           <h2>供应商</h2>
           <span className="meta">点击卡片查看联系人与沟通记录</span>
         </div>
+        <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />
         <QuickAddRow placeholder="新供应商名称" buttonLabel="添加供应商" me={state.me} onCreate={(name) => state.addVendor(name)} />
         <div className="grid g3">
           {state.vendors.map((v) => {
             const dleft = daysUntil(v.deadline);
             return (
-              <button key={v.id} className="vcard" onClick={() => state.openDrawer("vendor", v.id)}>
+              <button
+                key={v.id}
+                className="vcard"
+                style={{ position: "relative" }}
+                onClick={() => (selMode ? toggle(v.id) : state.openDrawer("vendor", v.id))}
+              >
+                {selMode && (
+                  <span style={{ position: "absolute", top: 12, right: 12 }}>
+                    <SelectCheckbox checked={selected.has(v.id)} />
+                  </span>
+                )}
                 <div className="vcard-top">
                   <div className="vlogo">{v.name.slice(0, 1)}</div>
                   <div>
@@ -2057,12 +2225,14 @@ export default function BoardApp({ me: initialMe }) {
   const [vendors, setVendors] = useState([]);
   const [runOfShowNodes, setRunOfShowNodes] = useState([]);
   const [dailyTasks, setDailyTasks] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
 
   const [tab, setTab] = useState("overview");
   const [rosTab, setRosTab] = useState("sf");
   const [invFilter, setInvFilter] = useState("all");
   const [adminView, setAdminView] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   const requireAuth = useCallback(() => {
     if (!me) {
@@ -2085,7 +2255,7 @@ export default function BoardApp({ me: initialMe }) {
   const loadAll = useCallback(async () => {
     const [
       profilesRes, eventsRes, looksRes, accRes, savedRes, tryonRes,
-      invRes, tasksRes, vendorsRes, nodesRes, dailyRes,
+      invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes,
     ] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*"),
@@ -2098,6 +2268,7 @@ export default function BoardApp({ me: initialMe }) {
       supabase.from("vendors").select("*"),
       supabase.from("run_of_show_nodes").select("*").order("sort_order"),
       supabase.from("daily_tasks").select("*").order("deadline", { ascending: true, nullsFirst: false }),
+      supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(30),
     ]);
     if (profilesRes.data?.length) setProfiles(profilesRes.data);
     if (eventsRes.data) setEvents(eventsRes.data);
@@ -2110,9 +2281,18 @@ export default function BoardApp({ me: initialMe }) {
     if (vendorsRes.data) setVendors(vendorsRes.data);
     if (nodesRes.data) setRunOfShowNodes(nodesRes.data);
     if (dailyRes.data) setDailyTasks(dailyRes.data);
+    if (activityRes.data) setActivityLog(activityRes.data);
     await loadPhotos();
     setLoading(false);
   }, [supabase, loadPhotos]);
+
+  const logActivity = useCallback(
+    async (summary) => {
+      if (!me) return;
+      await supabase.from("activity_log").insert({ actor: me.member_key, summary });
+    },
+    [supabase, me]
+  );
 
   useEffect(() => {
     loadAll();
@@ -2138,6 +2318,7 @@ export default function BoardApp({ me: initialMe }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "run_of_show_nodes" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "activity_log" }, scheduleReload)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer.current);
@@ -2158,6 +2339,7 @@ export default function BoardApp({ me: initialMe }) {
     const next = !ev.budget_tracking;
     setEvents((es) => es.map((e) => (e.id === id ? { ...e, budget_tracking: next } : e)));
     await supabase.from("events").update({ budget_tracking: next }).eq("id", id);
+    logActivity(`把「${ev.name}」的预算追踪${next ? "打开了" : "关闭了"}`);
   };
   const updateEvent = async (id, patch) => {
     if (!requireAuth()) return;
@@ -2188,12 +2370,15 @@ export default function BoardApp({ me: initialMe }) {
     setLooks((ls) => [...ls, row]);
     const { data } = await supabase.from("looks").insert(row).select().single();
     if (data) setLooks((ls) => ls.map((l) => (l.id === id ? data : l)));
+    logActivity(`添加了造型候选「${name}」`);
   };
   const deleteLookCandidate = async (id) => {
     if (!requireAuth()) return;
+    const name = looks.find((l) => l.id === id)?.name || "";
     setLooks((ls) => ls.filter((l) => l.id !== id));
     await supabase.from("looks").delete().eq("id", id);
     closeDrawer();
+    logActivity(`删除了造型候选「${name}」`);
   };
 
   const addAccessory = async ({ name, category, wearer, price }) => {
@@ -2202,11 +2387,14 @@ export default function BoardApp({ me: initialMe }) {
     const row = { id, name, category, wearer, price };
     setAccessories((as) => [...as, row]);
     await supabase.from("accessories").insert(row);
+    logActivity(`添加了配饰「${name}」`);
   };
   const deleteAccessory = async (id) => {
     if (!requireAuth()) return;
+    const name = accessories.find((a) => a.id === id)?.name || "";
     setAccessories((as) => as.filter((a) => a.id !== id));
     await supabase.from("accessories").delete().eq("id", id);
+    logActivity(`删除了配饰「${name}」`);
   };
 
   const updateInventory = async (id, patch) => {
@@ -2227,14 +2415,17 @@ export default function BoardApp({ me: initialMe }) {
     const row = { id, name, status: "to_buy", price_usd: 0, occasions: [], channel: "", added_by: me.member_key, notes: "" };
     setInventory((is) => [...is, row]);
     await supabase.from("inventory_items").insert(row);
+    logActivity(`添加了物品「${name}」`);
   };
   const deleteInventoryItem = async (id) => {
     if (!requireAuth()) return;
+    const name = inventory.find((i) => i.id === id)?.name || "";
     const paths = (photosByItem[id] || []).map((p) => p.storage_path);
     if (paths.length) await supabase.storage.from(PHOTOS_BUCKET).remove(paths);
     setInventory((is) => is.filter((i) => i.id !== id));
     await supabase.from("inventory_items").delete().eq("id", id);
     closeDrawer();
+    logActivity(`删除了物品「${name}」`);
   };
   const addInventoryPhotos = async (itemId, files) => {
     if (!requireAuth()) return;
@@ -2266,7 +2457,9 @@ export default function BoardApp({ me: initialMe }) {
   const toggleTaskDone = async (id) => {
     if (!requireAuth()) return;
     const t = tasks.find((x) => x.id === id);
-    await updateTask(id, { status: t.status === "done" ? "todo" : "done" });
+    const nowDone = t.status !== "done";
+    await updateTask(id, { status: nowDone ? "done" : "todo" });
+    if (!t.is_private) logActivity(`把待办「${t.title}」标记为${nowDone ? "已完成" : "未完成"}`);
   };
   const addTask = async (title) => {
     if (!requireAuth()) return;
@@ -2276,12 +2469,15 @@ export default function BoardApp({ me: initialMe }) {
       .select()
       .single();
     if (data) setTasks((ts) => [data, ...ts]);
+    logActivity(`添加了待办「${title}」`);
   };
   const deleteTask = async (id) => {
     if (!requireAuth()) return;
-    setTasks((ts) => ts.filter((t) => t.id !== id));
+    const t = tasks.find((x) => x.id === id);
+    setTasks((ts) => ts.filter((x) => x.id !== id));
     await supabase.from("tasks").delete().eq("id", id);
     closeDrawer();
+    if (!t?.is_private) logActivity(`删除了待办「${t?.title}」`);
   };
 
   const updateVendor = async (id, patch) => {
@@ -2295,12 +2491,15 @@ export default function BoardApp({ me: initialMe }) {
     const row = { id, name, category: "", quote: 0, is_rush: false, event_id: null, next_step: "", log: "", contact: "", phone: "", email: "" };
     setVendors((vs) => [...vs, row]);
     await supabase.from("vendors").insert(row);
+    logActivity(`添加了供应商「${name}」`);
   };
   const deleteVendor = async (id) => {
     if (!requireAuth()) return;
+    const name = vendors.find((v) => v.id === id)?.name || "";
     setVendors((vs) => vs.filter((v) => v.id !== id));
     await supabase.from("vendors").delete().eq("id", id);
     closeDrawer();
+    logActivity(`删除了供应商「${name}」`);
   };
 
   const updateNode = async (id, patch) => {
@@ -2318,12 +2517,15 @@ export default function BoardApp({ me: initialMe }) {
       .select()
       .single();
     if (data) setRunOfShowNodes((ns) => [...ns, data]);
+    logActivity(`在流程里添加了环节「${title}」`);
   };
   const deleteNode = async (id) => {
     if (!requireAuth()) return;
+    const title = runOfShowNodes.find((n) => n.id === id)?.title || "";
     setRunOfShowNodes((ns) => ns.filter((n) => n.id !== id));
     await supabase.from("run_of_show_nodes").delete().eq("id", id);
     closeDrawer();
+    logActivity(`删除了流程环节「${title}」`);
   };
 
   const createSavedLook = async ({ lookId, accessoryIds, occasion }) => {
@@ -2335,12 +2537,15 @@ export default function BoardApp({ me: initialMe }) {
       .select()
       .single();
     if (data) setSavedLooks((ls) => [...ls, data]);
+    logActivity(`保存了一张造型卡「${name}」`);
   };
   const deleteSavedLook = async (id) => {
     if (!requireAuth()) return;
+    const name = savedLooks.find((l) => l.id === id)?.name || "";
     setSavedLooks((ls) => ls.filter((l) => l.id !== id));
     await supabase.from("saved_looks").delete().eq("id", id);
     closeDrawer();
+    logActivity(`删除了造型卡「${name}」`);
   };
   const addTryon = async ({ lookName, accessoryNames }) => {
     if (!requireAuth()) return;
@@ -2360,6 +2565,7 @@ export default function BoardApp({ me: initialMe }) {
       .select()
       .single();
     if (data) setDailyTasks((ts) => [...ts, data]);
+    logActivity(`添加了日常待办「${title}」`);
   };
   const updateDailyTask = async (id, patch) => {
     if (!requireAuth()) return;
@@ -2369,16 +2575,23 @@ export default function BoardApp({ me: initialMe }) {
   const toggleDailyTaskDone = async (id) => {
     if (!requireAuth()) return;
     const t = dailyTasks.find((x) => x.id === id);
-    await updateDailyTask(id, { status: t.status === "done" ? "todo" : "done" });
+    const nowDone = t.status !== "done";
+    await updateDailyTask(id, { status: nowDone ? "done" : "todo" });
+    if (!t.is_private) logActivity(`把日常待办「${t.title}」标记为${nowDone ? "已完成" : "未完成"}`);
   };
   const deleteDailyTask = async (id) => {
     if (!requireAuth()) return;
-    setDailyTasks((ts) => ts.filter((t) => t.id !== id));
+    const t = dailyTasks.find((x) => x.id === id);
+    setDailyTasks((ts) => ts.filter((x) => x.id !== id));
     await supabase.from("daily_tasks").delete().eq("id", id);
     closeDrawer();
+    if (!t?.is_private) logActivity(`删除了日常待办「${t?.title}」`);
   };
 
-  const openDrawer = (type, id) => setSelected({ type, id });
+  const openDrawer = (type, id) => {
+    setSelected({ type, id });
+    setActivityOpen(false);
+  };
   const closeDrawer = () => setSelected(null);
   const goToRunOfShow = (evId) => {
     setRosTab(evId);
@@ -2445,7 +2658,18 @@ export default function BoardApp({ me: initialMe }) {
 
   return (
     <MembersCtx.Provider value={profiles}>
-      <Topbar tab={tab} setTab={setTab} me={me} adminView={adminView} setAdminView={setAdminView} onSignOut={handleSignOut} />
+      <Topbar
+        tab={tab}
+        setTab={setTab}
+        me={me}
+        adminView={adminView}
+        setAdminView={setAdminView}
+        onSignOut={handleSignOut}
+        onToggleActivity={() => {
+          setActivityOpen((v) => !v);
+          setSelected(null);
+        }}
+      />
       {tab === "overview" && <Overview state={state} setTab={setTab} setInvFilter={setInvFilter} goToRunOfShow={goToRunOfShow} />}
       {tab === "tasks" && <Tasks state={state} />}
       {tab === "inventory" && <Inventory state={state} invFilter={invFilter} setInvFilter={setInvFilter} adminView={adminView} />}
@@ -2455,6 +2679,7 @@ export default function BoardApp({ me: initialMe }) {
       {tab === "daily" && <Daily state={state} />}
       <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />
+      <ActivityPanel open={activityOpen} onClose={() => setActivityOpen(false)} log={activityLog} />
     </MembersCtx.Provider>
   );
 }

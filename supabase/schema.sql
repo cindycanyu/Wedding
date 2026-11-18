@@ -209,6 +209,16 @@ create table if not exists public.daily_tasks (
   updated_at timestamptz not null default now()
 );
 
+-- A short, public activity feed ("H.S. just added look Oxford Midnight") for
+-- the sidebar. Append-only: no update policy, and anyone can read it since
+-- the summaries never include anything the private-task rule would hide.
+create table if not exists public.activity_log (
+  id uuid primary key default gen_random_uuid(),
+  actor text not null check (actor in ('hs','ch')),
+  summary text not null,
+  created_at timestamptz not null default now()
+);
+
 -- ========== baseline privileges ==========
 -- RLS policies decide *which rows* a query can see; a role still needs the
 -- underlying SQL privilege to query the table at all, or every query fails
@@ -222,7 +232,7 @@ grant select on
   public.profiles, public.events, public.looks, public.accessories,
   public.saved_looks, public.tryon_results, public.inventory_items,
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
-  public.daily_tasks
+  public.daily_tasks, public.activity_log
 to authenticated, anon;
 grant insert, update, delete on
   public.profiles, public.events, public.looks, public.accessories,
@@ -230,6 +240,7 @@ grant insert, update, delete on
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
   public.daily_tasks
 to authenticated;
+grant insert on public.activity_log to authenticated;
 
 -- ========== row level security ==========
 alter table public.profiles enable row level security;
@@ -244,7 +255,15 @@ alter table public.tasks enable row level security;
 alter table public.vendors enable row level security;
 alter table public.run_of_show_nodes enable row level security;
 alter table public.daily_tasks enable row level security;
+alter table public.activity_log enable row level security;
 alter table public.member_invites enable row level security; -- no policies: deny-all from the API, trigger bypasses via security definer
+
+-- activity_log: anyone can read the feed; only an invited member can post to it.
+drop policy if exists "activity_log_select" on public.activity_log;
+create policy "activity_log_select" on public.activity_log for select using (true);
+drop policy if exists "activity_log_insert" on public.activity_log;
+create policy "activity_log_insert" on public.activity_log for insert
+  with check (public.current_member_key() is not null and actor = public.current_member_key());
 
 -- profiles: anyone can see the two member profiles (name/colors for avatars);
 -- you can only edit your own.
@@ -325,7 +344,7 @@ declare
 begin
   foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
     'inventory_items','inventory_photos','tasks','vendors','run_of_show_nodes','profiles',
-    'daily_tasks']
+    'daily_tasks','activity_log']
   loop
     if not exists (
       select 1 from pg_publication_tables
@@ -358,9 +377,14 @@ create policy "inventory_photos_storage_delete" on storage.objects for delete
 -- ========== seed data: mirrors the approved prototype ==========
 insert into public.events (id, name, en, date_label, status, status_label, progress, cover, description, witness_name, budget_tracking, budget_allocated, budget_confirmed, budget_estimated) values
   ('sf', '旧金山市政厅领证', 'SF City Hall', '2027 年春 · 日期待定', 'planning', '策划中', 35, 'cityhall', '私密仪式，仅邀挚友出席。孙哥作为唯一证婚人（Witness）。', '孙哥', false, 15000, 4100, 9200),
-  ('cn', '中国正式婚礼', 'China Wedding', '日期 / 地点 / 形式待确认', 'tbd', '待确认', 10, 'china', '国内正式婚礼，日期、地点与形式均待确认。', null, true, 20000, 800, 6000),
-  ('us', '美国小型庆祝晚餐', 'US Celebration Dinner', '场地 / 日期 / 规模待定', 'planning', '策划中', 20, 'dinner', '面向亲近朋友的小型庆祝晚宴，场地与规模待定。', null, true, 12000, 2300, 7800)
+  ('cn', '正式婚礼', 'China Wedding', '日期 / 地点 / 形式待确认', 'tbd', '待确认', 10, 'china', '国内正式婚礼，日期、地点与形式均待确认。', null, true, 20000, 800, 6000),
+  ('us', '美国朋友聚餐/旅行', 'US Friends Gathering', '场地 / 日期 / 规模待定', 'planning', '策划中', 20, 'dinner', '面向亲近朋友的小型庆祝晚宴，场地与规模待定。', null, true, 12000, 2300, 7800)
 on conflict (id) do nothing;
+
+-- Renamed after the fact: these two keep re-applying even on an existing
+-- project where the insert above was a no-op the first time.
+update public.events set name = '正式婚礼' where id = 'cn';
+update public.events set name = '美国朋友聚餐/旅行', en = 'US Friends Gathering' where id = 'us';
 
 insert into public.looks (id, name, subtitle, price, silhouette, fabric, sheen, availability, alteration, look_shape, wearer, occasions, added_by, notes) values
   ('nova', 'Nova Cocotte', 'Heavy Silk Satin', 2800, '美人鱼型 Mermaid', '重磅真丝缎 Heavy Silk Satin', '低光泽哑光', '现货 In Stock', '2–3 周', 'mermaid', 'ch', array['sf','us'], 'ch', '主婚纱首选，拟同时用于领证仪式与晚宴，通过更换配饰切换造型。'),

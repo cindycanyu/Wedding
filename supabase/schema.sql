@@ -381,11 +381,14 @@ drop policy if exists "inventory_photos_storage_delete" on storage.objects;
 create policy "inventory_photos_storage_delete" on storage.objects for delete
   using (bucket_id = 'inventory-photos' and public.current_member_key() is not null);
 
--- ========== seed data: mirrors the approved prototype ==========
+-- ========== seed data ==========
+-- Only the three fixed events are seeded. Everything else (looks, accessories,
+-- inventory, tasks, vendors, run-of-show nodes, daily to-dos) starts empty on
+-- purpose — add it yourself from the app. Nothing here is fabricated content.
 insert into public.events (id, name, en, date_label, status, status_label, progress, cover, description, witness_name, budget_tracking, budget_allocated, budget_confirmed, budget_estimated) values
-  ('sf', '旧金山市政厅领证', 'SF City Hall', '2027 年春 · 日期待定', 'planning', '策划中', 35, 'cityhall', '私密仪式，仅邀挚友出席。孙哥作为唯一证婚人（Witness）。', '孙哥', false, 15000, 4100, 9200),
-  ('cn', '正式婚礼', 'China Wedding', '日期 / 地点 / 形式待确认', 'tbd', '待确认', 10, 'china', '国内正式婚礼，日期、地点与形式均待确认。', null, true, 20000, 800, 6000),
-  ('us', '美国朋友聚餐/旅行', 'US Friends Gathering', '场地 / 日期 / 规模待定', 'planning', '策划中', 20, 'dinner', '面向亲近朋友的小型庆祝晚宴，场地与规模待定。', null, true, 12000, 2300, 7800)
+  ('sf', '旧金山市政厅领证', 'SF City Hall', '2027 年春 · 日期待定', 'planning', '策划中', 0, 'cityhall', '私密仪式，仅邀挚友出席。孙哥作为唯一证婚人（Witness）。', '孙哥', false, 0, 0, 0),
+  ('cn', '正式婚礼', 'China Wedding', '日期 / 地点 / 形式待确认', 'tbd', '待确认', 0, 'china', '国内正式婚礼，日期、地点与形式均待确认。', null, true, 0, 0, 0),
+  ('us', '美国朋友聚餐/旅行', 'US Friends Gathering', '场地 / 日期 / 规模待定', 'planning', '策划中', 0, 'dinner', '面向亲近朋友的小型庆祝晚宴，场地与规模待定。', null, true, 0, 0, 0)
 on conflict (id) do nothing;
 
 -- Renamed after the fact: these two keep re-applying even on an existing
@@ -393,81 +396,22 @@ on conflict (id) do nothing;
 update public.events set name = '正式婚礼' where id = 'cn';
 update public.events set name = '美国朋友聚餐/旅行', en = 'US Friends Gathering' where id = 'us';
 
-insert into public.looks (id, name, subtitle, price, silhouette, fabric, sheen, availability, alteration, look_shape, wearer, occasions, added_by, notes) values
-  ('nova', 'Nova Cocotte', 'Heavy Silk Satin', 2800, '美人鱼型 Mermaid', '重磅真丝缎 Heavy Silk Satin', '低光泽哑光', '现货 In Stock', '2–3 周', 'mermaid', 'ch', array['sf','us'], 'ch', '主婚纱首选，拟同时用于领证仪式与晚宴，通过更换配饰切换造型。'),
-  ('aidan', 'Aidan', 'Crepe A-line', 1950, 'A 字型 A-line', '绉缎 Crepe', '哑光', 'Rush 加急 · 约 4 周', '3 周', 'aline', 'ch', array['us'], 'hs', '备选款，版型更利落，适合晚宴站立敬酒环节。'),
-  ('eugenia', 'Eugenia', 'Tulle Ballgown', 2400, '公主蓬蓬裙 Ballgown', '网纱裙 + 真丝缎上身', '柔光', '现货', '4 周', 'ball', 'ch', array['cn'], 'ch', '拟用于国内正式婚礼敬酒环节，裙型饱满适合舞台效果。'),
-  ('oxford', 'Oxford Midnight', 'Wool Three-Piece Suit', 1400, '合身剪裁 Slim Fit', '丝光羊毛三件套', '哑光哔叽', '定制 · 约 5 周', '2 周', 'suit', 'hs', array['us','cn'], 'hs', '晚宴与国内婚礼主造型，深蓝三件套，适合正式敬酒环节。'),
-  ('larkspur', 'Larkspur', 'Flannel Two-Piece', 950, '经典剪裁 Classic Fit', '浅灰法兰绒', '哑光', '现货', '1 周', 'suit', 'hs', array['sf'], 'hs', '领证仪式用，轻量两件套，不配马甲，适合白天场合。')
-on conflict (id) do nothing;
-
-insert into public.accessories (id, category, name, price, wearer) values
-  ('v1', 'veil', '教堂长头纱', 320, 'ch'),
-  ('v2', 'veil', '鸟笼头纱', 180, 'ch'),
-  ('o1', 'overskirt', '可拆卸网纱裙摆', 450, 'ch'),
-  ('c1', 'cape', '真丝披肩', 280, 'ch'),
-  ('g1', 'gloves', '过肘长手套', 90, 'ch'),
-  ('j1', 'jewelry', '珍珠水滴耳环', 150, 'ch'),
-  ('j2', 'jewelry', '锆石项链', 220, 'ch'),
-  ('h1', 'headpiece', '珍珠发夹', 85, 'ch'),
-  ('s1', 'shoes', '象牙白缎面高跟鞋', 140, 'ch'),
-  ('s2', 'shoes', '黑色牛津皮鞋', 180, 'hs'),
-  ('t1', 'tie', '丝绒领结', 65, 'hs'),
-  ('t2', 'tie', '真丝领带', 70, 'hs'),
-  ('cl1', 'cufflink', '银质袖扣', 120, 'hs'),
-  ('cl2', 'cufflink', '口袋巾', 40, 'hs')
-on conflict (id) do nothing;
-
-insert into public.inventory_items (id, name, status, price_usd, occasions, channel, added_by, notes) values
-  ('i1', '主婚纱 Nova Cocotte', 'to_buy', 2800, array['sf','us'], 'BHLDN 官网定制', 'ch', '已付订金，款式与到货日期待最终确认。'),
-  ('i2', '对戒', 'purchased', 1600, array['global'], 'Tiffany & Co. 旧金山店', 'hs', '已购买，取货时核对刻字。'),
-  ('i3', '教堂长头纱', 'purchased', 320, array['sf'], 'BHLDN 官网', 'ch', ''),
-  ('i4', '过肘长手套', 'to_buy', 90, array['sf'], '待下单', 'ch', '需与婚纱同色号。'),
-  ('i5', '珍珠水滴耳环', 'purchased', 150, array['sf','us'], 'Mejuri 官网', 'ch', ''),
-  ('i6', '象牙白缎面高跟鞋', 'purchased', 140, array['us'], '门店改码后取货', 'ch', '周五可取货。'),
-  ('i8', '中式婚礼敬酒服', 'to_buy', 1200, array['cn'], '国内定制中', 'hs', '款式待确认，未付款。')
-on conflict (id) do nothing;
-
-insert into public.tasks (title, event_id, assignee, status, is_private, owner, notes)
-select * from (values
-  ('给孙哥发正式邀请', 'sf', 'hs', 'todo', false, 'hs', '确认地址后邮寄纸质邀请函。'),
-  ('准备证婚人感谢礼物', 'sf', 'hs', 'doing', true, 'hs', '打算送孙哥一块腕表，先别让他知道。'),
-  ('安排领证后用餐地点', 'sf', 'ch', 'todo', false, 'ch', '市政厅附近，预订 6 人桌。'),
-  ('确定中式婚礼日期与场地', 'cn', 'hs', 'todo', false, 'hs', '与双方父母对一下可选月份。'),
-  ('敲定晚宴场地与人数', 'us', 'ch', 'doing', false, 'ch', '目前意向 The Pearl Room，约 40 人。'),
-  ('准备给 C.H. 的求婚纪念惊喜礼物', null, 'hs', 'todo', true, 'hs', '刻字项链，预计下周到货。'),
-  ('挑选并锁定主造型', null, 'ch', 'doing', false, 'ch', '倾向 Nova Cocotte，待最终确认下单。'),
-  ('预订婚礼当天跟拍摄影师', 'us', 'hs', 'todo', false, 'hs', '对比 Rose & Light Studio 报价。')
-) as seed(title, event_id, assignee, status, is_private, owner, notes)
-where not exists (select 1 from public.tasks);
-
-insert into public.vendors (id, name, category, quote, is_rush, deadline, contact, phone, email, event_id, next_step, log) values
-  ('ve1', 'Rose & Light Studio', '摄影跟拍', 3200, false, '2026-12-10', 'Mia Chen', '+1 415-555-0148', 'mia@roselight.studio', 'us', '对比第二份报价后回复确认。', '11/10 发送需求说明；11/12 收到初版报价。'),
-  ('ve2', 'The Pearl Room SF', '晚宴场地', 5400, true, '2026-11-25', 'James Lin', '+1 415-555-0199', 'james@pearlroomsf.com', 'us', '需在 11/25 前确认档期，否则释放给其他客户。', '11/14 现场看场；档期紧张需尽快决定。'),
-  ('ve3', 'Bloom & Blush', '花艺布置', 980, false, '2026-12-20', 'Lucy Tan', '+1 415-555-0122', 'lucy@bloomblush.com', 'us', '确定主色调（雾粉 + 香槟金）后下单。', '11/08 发送 moodboard 参考图。'),
-  ('ve4', 'BHLDN Bridal', '婚纱定制', 2800, true, '2026-11-30', 'Sarah Kim', '+1 310-555-0177', 'sarah@bhldn.com', null, '11/30 前确认尺码与加急费用。', '11/05 下定金；等待最终款式确认。'),
-  ('ve5', '锦囍文化', '中式婚礼策划', 0, false, null, '王老师', '+86 138-0000-0000', 'wang@jinxi.cn', 'cn', '等待日期确定后再启动报价。', '11/01 初步沟通意向风格。')
-on conflict (id) do nothing;
-
-insert into public.run_of_show_nodes (event_id, time_label, title, location, responsible, notes, sort_order)
-select * from (values
-  ('sf', '10:00', '市政厅四楼大厅集合', 'San Francisco City Hall · 4F Rotunda', 'hs', '提前 30 分钟到场安检。', 1),
-  ('sf', '10:30', '领证仪式 · 孙哥证婚', '4F Rotunda', '孙哥', '仪式约 15 分钟，提前与孙哥核对誓词。', 2),
-  ('sf', '11:15', '合影留念', '市政厅台阶 & 圆顶大厅', 'ch', '预留 45 分钟拍摄。', 3),
-  ('sf', '12:30', '挚友午餐小聚', '市政厅附近餐厅', 'hs', '6-8 人，需提前预订。', 4),
-  ('cn', '待定', '迎亲（草稿）', '待定', 'hs', '具体流程待双方家庭沟通后确定。', 1),
-  ('cn', '待定', '婚宴敬酒（草稿）', '待定', 'ch', '场地与桌数待确认后再细化时间轴。', 2),
-  ('us', '18:00', '宾客入场', 'The Pearl Room SF（意向场地）', 'hs', '设置签到台与欢迎饮品。', 1),
-  ('us', '18:30', '鸡尾酒会', '庭院区域', 'ch', '配轻食与live乐手。', 2),
-  ('us', '19:30', '晚宴开始 + 致辞', '主宴会厅', 'hs', '致辞顺序：双方父母 → 新人。', 3),
-  ('us', '21:00', '甜点 + 跳舞', '主宴会厅', 'ch', '甜品台 + DJ 收尾。', 4)
-) as seed(event_id, time_label, title, location, responsible, notes, sort_order)
-where not exists (select 1 from public.run_of_show_nodes);
-
-insert into public.daily_tasks (title, deadline, status, is_private, owner, notes)
-select * from (values
-  ('续签公寓租约', (current_date + interval '10 days')::date, 'todo', false, 'hs', '房东说月底前要回复。'),
-  ('体检报告去拿', (current_date + interval '3 days')::date, 'todo', false, 'ch', ''),
-  ('还信用卡', (current_date + interval '1 days')::date, 'todo', true, 'hs', '')
-) as seed(title, deadline, status, is_private, owner, notes)
-where not exists (select 1 from public.daily_tasks);
+-- One-time cleanup for a project that already ran an older version of this
+-- file with example content (dresses, gloves, sample tasks, ...). Targets
+-- only the known seed rows by id/title, so anything you've since added
+-- yourself is untouched. Safe to leave in on a fresh project — every delete
+-- matches nothing there.
+delete from public.looks where id in ('nova','aidan','eugenia','oxford','larkspur');
+delete from public.accessories where id in ('v1','v2','o1','c1','g1','j1','j2','h1','s1','s2','t1','t2','cl1','cl2');
+delete from public.inventory_items where id in ('i1','i2','i3','i4','i5','i6','i8');
+delete from public.vendors where id in ('ve1','ve2','ve3','ve4','ve5');
+delete from public.run_of_show_nodes where title in (
+  '市政厅四楼大厅集合','领证仪式 · 孙哥证婚','合影留念','挚友午餐小聚',
+  '迎亲（草稿）','婚宴敬酒（草稿）','宾客入场','鸡尾酒会','晚宴开始 + 致辞','甜点 + 跳舞'
+);
+delete from public.tasks where title in (
+  '给孙哥发正式邀请','准备证婚人感谢礼物','安排领证后用餐地点','确定中式婚礼日期与场地',
+  '敲定晚宴场地与人数','准备给 C.H. 的求婚纪念惊喜礼物','挑选并锁定主造型','预订婚礼当天跟拍摄影师'
+);
+delete from public.daily_tasks where title in ('续签公寓租约','体检报告去拿','还信用卡');
+update public.events set progress = 0, budget_allocated = 0, budget_confirmed = 0, budget_estimated = 0;

@@ -1214,6 +1214,17 @@ function Drawer({ selected, onClose, state }) {
         {it.status !== "purchased" && (
           <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
         )}
+        {state.me && it.status === "to_buy" && (
+          <button
+            className="btn btn-ghost"
+            onClick={async () => {
+              await state.importInventoryAsTask(id);
+              state.jumpToEventSection("tasks", it.occasions?.[0] || "all");
+            }}
+          >
+            <Icon name="upload" size={13} /> 导入为待办
+          </button>
+        )}
         {state.me && <DeleteButton onDelete={() => state.deleteInventoryItem(id)} />}
       </>
     );
@@ -2491,7 +2502,10 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
         onClose={() => setAddOpen(false)}
         title="添加物品"
         onCreate={(values) => state.addInventoryItem(values)}
-        initialValues={{ status: "to_buy", price_usd: 0, occasions: [], create_look: false, wearer: "ch", look_shape: "aline" }}
+        initialValues={{
+          status: "to_buy", price_usd: 0, occasions: occFilter !== "all" ? [occFilter] : [],
+          create_look: false, wearer: "ch", look_shape: "aline",
+        }}
         fields={[
           { key: "name", label: "名称", required: true, autoFocus: true },
           { key: "status", label: "状态", type: "select", options: Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label })) },
@@ -3306,6 +3320,17 @@ export default function BoardApp({ me: initialMe }) {
     await supabase.from("inventory_items").update({ accessory_id: accId }).eq("id", inventoryId);
     logActivity(`把物品「${item.name}」导入为配饰`);
   };
+  const importInventoryAsTask = async (inventoryId) => {
+    if (!requireAuth()) return;
+    const item = inventory.find((i) => i.id === inventoryId);
+    if (!item) return;
+    await addTask({
+      title: `购买「${item.name}」`,
+      tags: item.occasions || [],
+      isPrivate: item.is_private,
+      notes: item.notes || "",
+    });
+  };
   const deleteAccessory = async (id) => {
     if (!requireAuth()) return;
     const name = accessories.find((a) => a.id === id)?.name || "";
@@ -3581,6 +3606,7 @@ export default function BoardApp({ me: initialMe }) {
     deleteAccessory,
     importInventoryAsLook,
     importInventoryAsAccessory,
+    importInventoryAsTask,
     updateInventory,
     toggleInvOccasion,
     addInventoryItem,

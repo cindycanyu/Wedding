@@ -131,6 +131,18 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <circle cx="17" cy="20" r="1.3" />
         </svg>
       );
+    case "chat":
+      return (
+        <svg {...common}>
+          <path d="M4 5h16v11H9l-5 4v-4H4z" />
+        </svg>
+      );
+    case "send":
+      return (
+        <svg {...common}>
+          <path d="M3 12 21 3 14 21l-3-7-8-2z" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -600,6 +612,7 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
         <form className="drawer-body" onSubmit={submit}>
           {fields.map((f) => {
             const v = values[f.key];
+            if (f.showIf && !f.showIf(values)) return null;
             if (f.type === "select") {
               return (
                 <div className="field" key={f.key}>
@@ -770,6 +783,8 @@ function Drawer({ selected, onClose, state }) {
     title = "",
     sub = "";
   const tagSuggestionPool = [...new Set([...state.tasks, ...state.dailyTasks].flatMap((x) => x.tags || []))];
+  const eventIds = new Set(state.events.map((e) => e.id));
+  const dailyTagSuggestionPool = [...new Set(state.dailyTasks.flatMap((x) => x.tags || []))].filter((t) => !eventIds.has(t));
 
   const onPhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -957,6 +972,17 @@ function Drawer({ selected, onClose, state }) {
         <div className="field">
           <label>备注 / 沟通记录</label>
           <DebouncedField as="textarea" rows="3" value={d.notes} onCommit={(v) => state.updateLook(id, { notes: v })} />
+        </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={d.is_private}
+              onChange={(e) => state.updateLook(id, { is_private: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+            仅自己可见（惊喜款，对方暂时看不到，含关联物品清单条目）
+          </label>
         </div>
         <div className="kv">
           <span className="k">添加人</span>
@@ -1341,8 +1367,8 @@ function Drawer({ selected, onClose, state }) {
         <TagEditor
           tags={d.tags || []}
           onChange={(tags) => state.updateDailyTask(id, { tags })}
-          events={state.events}
-          suggestions={tagSuggestionPool}
+          events={[]}
+          suggestions={dailyTagSuggestionPool}
         />
         <div className="field">
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
@@ -1437,8 +1463,87 @@ function ActivityPanel({ open, onClose, log }) {
   );
 }
 
+function ChatPanel({ open, onClose, messages, me, onSend, onDelete }) {
+  const profiles = useProfiles();
+  const [draft, setDraft] = useState("");
+  const bodyRef = useRef(null);
+  useEffect(() => {
+    if (open && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+  }, [open, messages.length]);
+  if (!open) return null;
+  const submit = (e) => {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    onSend(draft);
+    setDraft("");
+  };
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="留言">
+        <div className="drawer-head">
+          <h3>留言</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <div className="drawer-body" ref={bodyRef}>
+          {messages.length === 0 && <div className="empty-state">还没有留言，写点什么给对方吧</div>}
+          {messages.map((m) => {
+            const mine = m.sender === me?.member_key;
+            const p = memberOf(profiles, m.sender);
+            return (
+              <div
+                key={m.id}
+                style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", gap: 4 }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexDirection: mine ? "row-reverse" : "row" }}>
+                  <Avatar id={m.sender} size={20} />
+                  <span className="tmeta">
+                    {p?.name || m.sender} · {timeAgo(m.created_at)}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    maxWidth: "80%",
+                    padding: "9px 13px",
+                    borderRadius: 14,
+                    fontSize: 13.5,
+                    lineHeight: 1.5,
+                    background: mine ? "var(--rose-deep)" : "var(--blush-deep)",
+                    color: mine ? "#fff" : "var(--plum)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    cursor: mine ? "pointer" : "default",
+                  }}
+                  title={mine ? "点击删除这条留言" : ""}
+                  onClick={() => mine && onDelete(m.id)}
+                >
+                  {m.body}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <form onSubmit={submit} style={{ display: "flex", gap: 8, padding: "14px 20px", borderTop: "1px solid var(--line)" }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="写点什么留给对方…"
+            style={{ flex: 1 }}
+            autoFocus
+          />
+          <button className="btn btn-primary" type="submit" aria-label="发送">
+            <Icon name="send" size={14} />
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
 /* ============ Topbar ============ */
-function Topbar({ tab, setTab, me, onSignOut, onToggleActivity }) {
+function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) {
   const tabs = [
     ["overview", "总览"],
     ["tasks", "待办"],
@@ -1465,6 +1570,11 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity }) {
             </button>
           ))}
         </div>
+        {me && (
+          <button className="chip" onClick={onToggleChat} title="留言">
+            <Icon name="chat" size={12} /> 留言
+          </button>
+        )}
         <button className="chip" onClick={onToggleActivity} title="最近动态">
           <Icon name="bell" size={12} /> 动态
         </button>
@@ -1819,6 +1929,15 @@ function Lookbook({ state }) {
                       <SelectCheckbox checked={lookSel.selected.has(d.id)} />
                     </span>
                   )}
+                  {d.is_private && (
+                    <span
+                      className="sel-check"
+                      style={{ top: 10, left: 10, right: "auto", background: "var(--plum)" }}
+                      title="仅自己可见"
+                    >
+                      <Icon name="lock" size={12} color="#fff" />
+                    </span>
+                  )}
                   <OccChips occasions={d.occasions} />
                   <span
                     className="price-tag"
@@ -2085,7 +2204,7 @@ function Lookbook({ state }) {
         onClose={() => setAddLookOpenFor(null)}
         title={`添加造型 · ${addLookOpenFor === "ch" ? "她的" : "他的"}`}
         onCreate={(values) => state.addLookCandidate({ ...values, wearer: addLookOpenFor })}
-        initialValues={{ look_shape: "aline", price: 0, occasions: [] }}
+        initialValues={{ look_shape: "aline", price: 0, occasions: [], is_private: false }}
         fields={[
           { key: "name", label: "名称", required: true, autoFocus: true },
           { key: "look_shape", label: "剪影款式", type: "select", options: LOOK_SHAPES.map((s) => ({ value: s.id, label: s.name })) },
@@ -2097,6 +2216,7 @@ function Lookbook({ state }) {
           { key: "alteration", label: "改衣预估" },
           { key: "occasions", label: "适用场合", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
           { key: "notes", label: "备注", type: "textarea" },
+          { key: "is_private", label: "仅自己可见（惊喜款，对方暂时看不到，含关联物品清单条目）", type: "checkbox" },
         ]}
       />
       <FormModal
@@ -2237,7 +2357,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
         onClose={() => setAddOpen(false)}
         title="添加物品"
         onCreate={(values) => state.addInventoryItem(values)}
-        initialValues={{ status: "to_buy", price_usd: 0, occasions: [] }}
+        initialValues={{ status: "to_buy", price_usd: 0, occasions: [], create_look: false, wearer: "ch", look_shape: "aline" }}
         fields={[
           { key: "name", label: "名称", required: true, autoFocus: true },
           { key: "status", label: "状态", type: "select", options: Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label })) },
@@ -2245,6 +2365,17 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           { key: "channel", label: "购买渠道" },
           { key: "occasions", label: "跨场合复用计划", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
           { key: "notes", label: "备注", type: "textarea" },
+          { key: "create_look", label: "同时添加为造型候选（婚纱 / 礼服等）", type: "checkbox" },
+          {
+            key: "wearer", label: "造型适用对象", type: "select",
+            options: [{ value: "ch", label: "她" }, { value: "hs", label: "他" }],
+            showIf: (v) => v.create_look,
+          },
+          {
+            key: "look_shape", label: "剪影款式", type: "select",
+            options: LOOK_SHAPES.map((s) => ({ value: s.id, label: s.name })),
+            showIf: (v) => v.create_look,
+          },
         ]}
       />
     </div>
@@ -2387,7 +2518,7 @@ function Daily({ state }) {
   const profiles = useProfiles();
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const [addOpen, setAddOpen] = useState(false);
-  const tagPool = [...new Set([...state.events.map((e) => e.id), ...state.dailyTasks.flatMap((t) => t.tags || [])])];
+  const tagPool = [...new Set(state.dailyTasks.flatMap((t) => t.tags || []))];
   const visible = state.dailyTasks.filter((t) => {
     if (ownerFilter !== "all" && t.owner !== ownerFilter) return false;
     if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
@@ -2489,8 +2620,8 @@ function Daily({ state }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreate={state.addDailyTask}
-        events={state.events}
         tagSuggestions={tagPool}
+        events={[]}
         showAssignee={false}
         defaultAssignee={state.me?.member_key}
         suggestedTag={tagFilter !== "all" ? tagFilter : null}
@@ -2784,12 +2915,14 @@ export default function BoardApp({ me: initialMe }) {
   const [runOfShowNodes, setRunOfShowNodes] = useState([]);
   const [dailyTasks, setDailyTasks] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
+  const [messages, setMessages] = useState([]);
 
   const [tab, setTab] = useState("overview");
   const [rosTab, setRosTab] = useState("sf");
   const [invFilter, setInvFilter] = useState("all");
   const [selected, setSelected] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [eventJump, setEventJump] = useState("all");
 
   const requireAuth = useCallback(() => {
@@ -2813,7 +2946,7 @@ export default function BoardApp({ me: initialMe }) {
   const loadAll = useCallback(async () => {
     const [
       profilesRes, eventsRes, looksRes, accRes, savedRes, tryonRes,
-      invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes,
+      invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes, messagesRes,
     ] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*").order("sort_order"),
@@ -2827,6 +2960,7 @@ export default function BoardApp({ me: initialMe }) {
       supabase.from("run_of_show_nodes").select("*").order("sort_order"),
       supabase.from("daily_tasks").select("*").order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(30),
+      me ? supabase.from("messages").select("*").order("created_at") : Promise.resolve({ data: [] }),
     ]);
     if (profilesRes.data?.length) setProfiles(profilesRes.data);
     if (eventsRes.data) setEvents(eventsRes.data);
@@ -2840,9 +2974,10 @@ export default function BoardApp({ me: initialMe }) {
     if (nodesRes.data) setRunOfShowNodes(nodesRes.data);
     if (dailyRes.data) setDailyTasks(dailyRes.data);
     if (activityRes.data) setActivityLog(activityRes.data);
+    if (messagesRes.data) setMessages(messagesRes.data);
     await loadPhotos();
     setLoading(false);
-  }, [supabase, loadPhotos]);
+  }, [supabase, loadPhotos, me]);
 
   const logActivity = useCallback(
     async (summary) => {
@@ -2851,6 +2986,21 @@ export default function BoardApp({ me: initialMe }) {
     },
     [supabase, me]
   );
+
+  const sendMessage = async (body) => {
+    if (!requireAuth()) return;
+    const v = (body || "").trim();
+    if (!v) return;
+    const id = crypto.randomUUID();
+    const row = { id, sender: me.member_key, body: v, created_at: new Date().toISOString() };
+    setMessages((ms) => [...ms, row]);
+    await supabase.from("messages").insert({ id, sender: me.member_key, body: v });
+  };
+  const deleteMessage = async (id) => {
+    if (!requireAuth()) return;
+    setMessages((ms) => ms.filter((m) => m.id !== id));
+    await supabase.from("messages").delete().eq("id", id);
+  };
 
   useEffect(() => {
     loadAll();
@@ -2877,6 +3027,7 @@ export default function BoardApp({ me: initialMe }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "activity_log" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, scheduleReload)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer.current);
@@ -2928,10 +3079,11 @@ export default function BoardApp({ me: initialMe }) {
     await supabase.from("looks").update(patch).eq("id", id);
     // Keep the linked inventory row (created when this look was added) in sync on the
     // two fields that matter for budgeting — name and price.
-    if ("price" in patch || "name" in patch) {
+    if ("price" in patch || "name" in patch || "is_private" in patch) {
       const linkedPatch = {};
       if ("price" in patch) linkedPatch.price_usd = patch.price;
       if ("name" in patch) linkedPatch.name = patch.name;
+      if ("is_private" in patch) linkedPatch.is_private = patch.is_private;
       setInventory((is) => is.map((i) => (i.look_id === id ? { ...i, ...linkedPatch } : i)));
       await supabase.from("inventory_items").update(linkedPatch).eq("look_id", id);
     }
@@ -2945,7 +3097,7 @@ export default function BoardApp({ me: initialMe }) {
   };
   const addLookCandidate = async ({
     name, wearer, look_shape, price, silhouette, fabric, sheen,
-    availability, alteration, occasions, notes,
+    availability, alteration, occasions, notes, is_private,
   }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
@@ -2953,16 +3105,18 @@ export default function BoardApp({ me: initialMe }) {
       id, name, wearer, look_shape: look_shape || "aline", added_by: me.member_key,
       subtitle: "", price: price || 0, silhouette: silhouette || "", fabric: fabric || "", sheen: sheen || "",
       availability: availability || "", alteration: alteration || "", occasions: occasions || [], notes: notes || "",
+      is_private: !!is_private, owner: me.member_key,
     };
     setLooks((ls) => [...ls, row]);
     const { data } = await supabase.from("looks").insert(row).select().single();
     if (data) setLooks((ls) => ls.map((l) => (l.id === id ? data : l)));
     // Linked so it shows up in 物品清单 too — "选择中" since adding a candidate isn't
-    // a purchase decision yet. updateLook keeps the name/price in sync afterward.
+    // a purchase decision yet. updateLook keeps the name/price/privacy in sync afterward.
     const invId = crypto.randomUUID();
     const invRow = {
       id: invId, name, status: "pending", price_usd: price || 0, occasions: occasions || [],
       channel: "", added_by: me.member_key, notes: "", look_id: id,
+      is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, invRow]);
     await supabase.from("inventory_items").insert(invRow);
@@ -3005,16 +3159,30 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
-  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes }) => {
+  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes, create_look, wearer, look_shape }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
+    let lookId = null;
+    if (create_look) {
+      lookId = crypto.randomUUID();
+      const lookRow = {
+        id: lookId, name, wearer: wearer || "ch", look_shape: look_shape || "aline", added_by: me.member_key,
+        subtitle: "", price: price_usd || 0, silhouette: "", fabric: "", sheen: "",
+        availability: "", alteration: "", occasions: occasions || [], notes: notes || "",
+        is_private: false, owner: me.member_key,
+      };
+      setLooks((ls) => [...ls, lookRow]);
+      const { data } = await supabase.from("looks").insert(lookRow).select().single();
+      if (data) setLooks((ls) => ls.map((l) => (l.id === lookId ? data : l)));
+    }
     const row = {
       id, name, status: status || "to_buy", price_usd: price_usd || 0,
       occasions: occasions || [], channel: channel || "", added_by: me.member_key, notes: notes || "",
+      look_id: lookId,
     };
     setInventory((is) => [...is, row]);
     await supabase.from("inventory_items").insert(row);
-    logActivity(`添加了物品「${name}」`);
+    logActivity(`添加了物品「${name}」${lookId ? "（同时创建了造型候选）" : ""}`);
   };
   const deleteInventoryItem = async (id) => {
     if (!requireAuth()) return;
@@ -3286,6 +3454,10 @@ export default function BoardApp({ me: initialMe }) {
           setActivityOpen((v) => !v);
           setSelected(null);
         }}
+        onToggleChat={() => {
+          setChatOpen((v) => !v);
+          setSelected(null);
+        }}
       />
       {tab === "overview" && <Overview state={state} setTab={setTab} setInvFilter={setInvFilter} goToRunOfShow={goToRunOfShow} />}
       {tab === "tasks" && <Tasks state={state} initialTag={eventJump} />}
@@ -3297,6 +3469,7 @@ export default function BoardApp({ me: initialMe }) {
       <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />
       <ActivityPanel open={activityOpen} onClose={() => setActivityOpen(false)} log={activityLog} />
+      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} me={me} onSend={sendMessage} onDelete={deleteMessage} />
     </MembersCtx.Provider>
   );
 }

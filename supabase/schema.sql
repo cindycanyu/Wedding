@@ -112,8 +112,18 @@ create table if not exists public.looks (
   wearer text not null check (wearer in ('hs','ch')),
   occasions text[] not null default '{}',     -- event ids
   added_by text check (added_by in ('hs','ch')),
-  notes text not null default ''
+  notes text not null default '',
+  is_private boolean not null default false,
+  owner text
 );
+-- Added after the table could already have rows: backfill before tightening to not null.
+alter table public.looks add column if not exists is_private boolean not null default false;
+alter table public.looks add column if not exists owner text;
+update public.looks set owner = coalesce(owner, added_by, 'hs') where owner is null;
+alter table public.looks alter column owner set default 'hs';
+alter table public.looks alter column owner set not null;
+alter table public.looks drop constraint if exists looks_owner_check;
+alter table public.looks add constraint looks_owner_check check (owner in ('hs','ch'));
 
 create table if not exists public.accessories (
   id text primary key,
@@ -151,12 +161,23 @@ create table if not exists public.inventory_items (
   added_by text check (added_by in ('hs','ch')),
   notes text not null default '',
   look_id text references public.looks (id) on delete set null,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  is_private boolean not null default false,
+  owner text
 );
 
 -- These two only do something on a project that already had this table
 -- before "pending" and look_id existed; harmless no-ops on a fresh one.
 alter table public.inventory_items add column if not exists look_id text references public.looks (id) on delete set null;
+-- A private look's linked inventory row mirrors its privacy so the surprise
+-- doesn't leak through the 物品清单 tab. Backfill before tightening to not null.
+alter table public.inventory_items add column if not exists is_private boolean not null default false;
+alter table public.inventory_items add column if not exists owner text;
+update public.inventory_items set owner = coalesce(owner, added_by, 'hs') where owner is null;
+alter table public.inventory_items alter column owner set default 'hs';
+alter table public.inventory_items alter column owner set not null;
+alter table public.inventory_items drop constraint if exists inventory_items_owner_check;
+alter table public.inventory_items add constraint inventory_items_owner_check check (owner in ('hs','ch'));
 alter table public.inventory_items drop constraint if exists inventory_items_status_check;
 alter table public.inventory_items add constraint inventory_items_status_check check (status in ('pending','to_buy','purchased'));
 
@@ -234,6 +255,16 @@ create table if not exists public.activity_log (
   created_at timestamptz not null default now()
 );
 
+-- A private two-person chat/memo between hs and ch — unlike the rest of the
+-- site this is deliberately NOT public: anonymous visitors get no grant at
+-- all, same treatment as member_invites.
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  sender text not null check (sender in ('hs','ch')),
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
 -- ========== baseline privileges ==========
 -- RLS policies decide *which rows* a query can see; a role still needs the
 -- underlying SQL privilege to query the table at all, or every query fails
@@ -256,6 +287,8 @@ grant insert, update, delete on
   public.daily_tasks
 to authenticated;
 grant insert on public.activity_log to authenticated;
+-- messages: authenticated only, no anon grant at all — this chat is private.
+grant select, insert, delete on public.messages to authenticated;
 
 -- ========== row level security ==========
 alter table public.profiles enable row level security;
@@ -271,6 +304,7 @@ alter table public.vendors enable row level security;
 alter table public.run_of_show_nodes enable row level security;
 alter table public.daily_tasks enable row level security;
 alter table public.activity_log enable row level security;
+alter table public.messages enable row level security;
 alter table public.member_invites enable row level security; -- no policies: deny-all from the API, trigger bypasses via security definer
 
 -- activity_log: anyone can read the feed; only an invited member can post to it.
@@ -279,6 +313,18 @@ create policy "activity_log_select" on public.activity_log for select using (tru
 drop policy if exists "activity_log_insert" on public.activity_log;
 create policy "activity_log_insert" on public.activity_log for insert
   with check (public.current_member_key() is not null and actor = public.current_member_key());
+
+-- messages: only the two logged-in members can read or write this chat; a
+-- sender can delete their own message, never the other member's.
+drop policy if exists "messages_select" on public.messages;
+create policy "messages_select" on public.messages for select
+  using (public.current_member_key() is not null);
+drop policy if exists "messages_insert" on public.messages;
+create policy "messages_insert" on public.messages for insert
+  with check (public.current_member_key() is not null and sender = public.current_member_key());
+drop policy if exists "messages_delete" on public.messages;
+create policy "messages_delete" on public.messages for delete
+  using (sender = public.current_member_key());
 
 -- profiles: anyone can see the two member profiles (name/colors for avatars);
 -- you can only edit your own.
@@ -296,8 +342,8 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
-    'inventory_items','inventory_photos','vendors','run_of_show_nodes']
+  foreach t in array array['events','accessories','saved_looks','tryon_results',
+    'inventory_photos','vendors','run_of_show_nodes']
   loop
     execute format('drop policy if exists "%s_rw" on public.%I', t, t);
     execute format('drop policy if exists "%s_select" on public.%I', t, t);
@@ -320,14 +366,15 @@ begin
   end loop;
 end $$;
 
--- tasks and daily_tasks: the privacy rule — a private row is invisible and
--- unwritable to anyone but its owner (including anonymous visitors, for whom
--- current_member_key() is null, so only not_is_private rows ever match).
+-- tasks, daily_tasks, looks and inventory_items: the privacy rule — a private
+-- row is invisible and unwritable to anyone but its owner (including
+-- anonymous visitors, for whom current_member_key() is null, so only
+-- not_is_private rows ever match).
 do $$
 declare
   t text;
 begin
-  foreach t in array array['tasks','daily_tasks']
+  foreach t in array array['tasks','daily_tasks','looks','inventory_items']
   loop
     execute format('drop policy if exists "%s_select" on public.%I', t, t);
     execute format(
@@ -359,7 +406,7 @@ declare
 begin
   foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
     'inventory_items','inventory_photos','tasks','vendors','run_of_show_nodes','profiles',
-    'daily_tasks','activity_log']
+    'daily_tasks','activity_log','messages']
   loop
     if not exists (
       select 1 from pg_publication_tables

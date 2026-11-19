@@ -171,6 +171,21 @@ const STATUS_META = {
 };
 const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
+const STATUS_SORT_PRIORITY = { doing: 0, todo: 1, done: 2 };
+// Shared by Tasks and Daily: in-progress first, done last, and within each
+// group the nearer deadline first (no-deadline items sink to the bottom of
+// their group).
+function sortTaskList(items) {
+  return [...items].sort((a, b) => {
+    const pa = STATUS_SORT_PRIORITY[a.status] ?? 1;
+    const pb = STATUS_SORT_PRIORITY[b.status] ?? 1;
+    if (pa !== pb) return pa - pb;
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  });
+}
 const RATE = 6.7; // fixed USD->CNY rate; good enough for a personal budget estimate
 const ACC_CATS = [
   { id: "veil", name: "头纱" },
@@ -1585,8 +1600,11 @@ function Drawer({ selected, onClose, state }) {
           <div className="field">
             <label>状态</label>
             <select value={d.status} onChange={(e) => state.updateDailyTask(id, { status: e.target.value })}>
-              <option value="todo">待处理</option>
-              <option value="done">已完成</option>
+              {Object.entries(TASK_STATUS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -2722,11 +2740,13 @@ function Tasks({ state, initialTag }) {
   const [addOpen, setAddOpen] = useState(false);
   const tagPool = [...new Set([...state.events.map((e) => e.id), ...state.tasks.flatMap((t) => t.tags || [])])];
   // RLS already hides other people's private tasks server-side — no client-side privacy filter needed.
-  const visible = state.tasks.filter((t) => {
-    if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
-    if (assigneeFilter !== "all" && t.assignee !== assigneeFilter) return false;
-    return true;
-  });
+  const visible = sortTaskList(
+    state.tasks.filter((t) => {
+      if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
+      if (assigneeFilter !== "all" && t.assignee !== assigneeFilter) return false;
+      return true;
+    })
+  );
   const bulkDelete = async () => {
     if (selected.size === 0) return;
     if (!window.confirm(`确定删除选中的 ${selected.size} 条待办吗？`)) return;
@@ -2842,12 +2862,7 @@ function Daily({ state }) {
     if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
     return true;
   });
-  const sorted = [...visible].sort((a, b) => {
-    if (!a.deadline && !b.deadline) return 0;
-    if (!a.deadline) return 1;
-    if (!b.deadline) return -1;
-    return a.deadline.localeCompare(b.deadline);
-  });
+  const sorted = sortTaskList(visible);
   const bulkDelete = async () => {
     if (selected.size === 0) return;
     if (!window.confirm(`确定删除选中的 ${selected.size} 条日常待办吗？`)) return;
@@ -2929,6 +2944,9 @@ function Daily({ state }) {
                 )}
                 <TaskTagChips tags={t.tags} events={state.events} />
                 <DeadlineBadge deadline={t.deadline} done={done} />
+                <span className={"statuspill " + (t.status === "todo" ? "todo" : t.status === "doing" ? "doing" : "done")}>
+                  {TASK_STATUS[t.status]}
+                </span>
               </div>
             );
           })}

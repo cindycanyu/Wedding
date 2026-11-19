@@ -32,6 +32,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "H.S. & C.H. Wedding Workbook",
   description: "多人协作婚礼筹备工作台",
+  // The site is readable by anyone with the link, but it's not meant to be
+  // discoverable — tell every search engine not to index or crawl it.
+  robots: { index: false, follow: false },
 };
 
 // Without this, iOS Safari keeps fixed-position elements (the 留言/所有抽屉)

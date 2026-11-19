@@ -247,7 +247,7 @@ create table if not exists public.daily_tasks (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   deadline date,
-  status text not null default 'todo' check (status in ('todo','done')),
+  status text not null default 'todo' check (status in ('todo','doing','done')),
   is_private boolean not null default false,
   owner text not null check (owner in ('hs','ch')),
   assignee text,
@@ -256,6 +256,9 @@ create table if not exists public.daily_tasks (
   updated_at timestamptz not null default now()
 );
 alter table public.daily_tasks add column if not exists tags text[] not null default '{}';
+-- Unify with tasks' 3-state status (todo/doing/done) instead of just 2.
+alter table public.daily_tasks drop constraint if exists daily_tasks_status_check;
+alter table public.daily_tasks add constraint daily_tasks_status_check check (status in ('todo','doing','done'));
 -- Owner was doing double duty as "who it's for" and "who created it (for
 -- privacy)". Split them: assignee is now the editable responsible person,
 -- owner stays fixed to the creator. Backfill existing rows from owner.

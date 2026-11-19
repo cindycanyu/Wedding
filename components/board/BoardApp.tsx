@@ -1823,7 +1823,7 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
 /* ============ Overview page ============ */
 function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
   const invCounts = useMemo(() => {
-    const c = { to_buy: 0, purchased: 0 };
+    const c = { pending: 0, to_buy: 0, purchased: 0 };
     state.inventory.forEach((i) => c[i.status]++);
     return c;
   }, [state.inventory]);

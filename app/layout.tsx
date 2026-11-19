@@ -1,9 +1,19 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "H.S. & C.H. Wedding Workbook",
   description: "多人协作婚礼筹备工作台",
+};
+
+// Without this, iOS Safari keeps fixed-position elements (the 留言/所有抽屉)
+// sized to the layout viewport when the on-screen keyboard opens, so the
+// bottom of the panel — the chat input, here — ends up hidden behind the
+// keyboard instead of the layout actually shrinking to fit above it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

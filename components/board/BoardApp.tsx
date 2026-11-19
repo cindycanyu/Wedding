@@ -1742,6 +1742,9 @@ function ChatPanel({ open, onClose, messages, me, onSend, onDelete }) {
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onFocus={() => {
+              if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+            }}
             placeholder="写点什么留给对方…"
             style={{ flex: 1 }}
             autoFocus

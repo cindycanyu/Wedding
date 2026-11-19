@@ -1837,9 +1837,19 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
         <button className="chip" onClick={onToggleActivity} title="最近动态">
           <Icon name="bell" size={12} /> 动态
         </button>
-        <a className="chip" href="/api/calendar" title="订阅到手机日历，deadline前会自动提醒">
+        <button
+          className="chip"
+          title="订阅到手机日历，会自动同步 + deadline前自动提醒"
+          onClick={() => {
+            // webcal:// (not https://) is what tells the OS "subscribe and
+            // keep syncing this", instead of just importing a one-time
+            // snapshot of today's events. Needs window, so this can't be a
+            // static href computed during SSR.
+            window.location.href = `webcal://${window.location.host}/api/calendar`;
+          }}
+        >
           <Icon name="calendar" size={12} /> 订阅日历
-        </a>
+        </button>
         <div className="identity">
           {me ? (
             <>

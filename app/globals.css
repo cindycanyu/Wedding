@@ -71,6 +71,32 @@ a{color:var(--rose-dark);}
 .identity{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none;}
 .identity-label{font-size:11px;color:var(--plum-soft);display:none;}
 @media(min-width:720px){.identity-label{display:block;}}
+
+/* Mobile gets its own nav layout, not a squeezed copy of desktop's: the
+   brand text + chips + avatar alone already fill a narrow row, so the tab
+   strip has near-zero width left and only the active tab peeks through.
+   Pull it into a fixed bottom bar instead — full-width, thumb-reachable,
+   and with room to actually swipe. It has to be a sibling of .topbar, not
+   a descendant: .topbar's backdrop-filter creates its own containing
+   block, so a position:fixed child inside it anchors to .topbar's own
+   (short) box instead of the viewport. */
+.navtabs-mobile{display:none;}
+@media(max-width:720px){
+  body{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px));}
+  .topbar-inner .navtabs{display:none;}
+  .navtabs-mobile{
+    display:flex;gap:6px;overflow-x:auto;
+    position:fixed;left:0;right:0;bottom:0;z-index:40;
+    background:var(--cream);
+    border-top:1px solid var(--line);
+    box-shadow:0 -6px 20px rgba(74,43,51,.08);
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));
+    -webkit-overflow-scrolling:touch;
+    scroll-snap-type:x proximate;
+  }
+  .navtabs-mobile::-webkit-scrollbar{display:none;}
+  .navtabs-mobile .tab{padding:10px 16px;scroll-snap-align:start;}
+}
 .avatarbtn{
   width:34px;height:34px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;
   font-size:12px;font-weight:600;flex:none;box-shadow:0 1px 3px rgba(74,43,51,.25);position:relative;

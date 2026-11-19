@@ -1758,49 +1758,56 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
     ["vendors", "供应商 & 预算"],
     ["daily", "Daily"],
   ];
+  const tabButtons = tabs.map(([k, label]) => (
+    <button key={k} className={"tab" + (tab === k ? " active" : "")} onClick={() => setTab(k)}>
+      {label}
+    </button>
+  ));
   return (
-    <div className="topbar">
-      <div className="wrap topbar-inner">
-        <div className="brandmark">
-          <div className="mono serif">H·C</div>
-          <div className="brand-text">
-            <span className="name">H.S. &amp; C.H.</span>
-            <span className="sub">Wedding Workbook</span>
+    <>
+      <div className="topbar">
+        <div className="wrap topbar-inner">
+          <div className="brandmark">
+            <div className="mono serif">H·C</div>
+            <div className="brand-text">
+              <span className="name">H.S. &amp; C.H.</span>
+              <span className="sub">Wedding Workbook</span>
+            </div>
+          </div>
+          <div className="navtabs">{tabButtons}</div>
+          {me && (
+            <button className="chip" onClick={onToggleChat} title="留言">
+              <Icon name="chat" size={12} /> 留言
+            </button>
+          )}
+          <button className="chip" onClick={onToggleActivity} title="最近动态">
+            <Icon name="bell" size={12} /> 动态
+          </button>
+          <div className="identity">
+            {me ? (
+              <>
+                <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
+                  {me.name.slice(0, 1)}
+                </button>
+                <button className="signout-btn" onClick={onSignOut}>
+                  退出登录
+                </button>
+              </>
+            ) : (
+              <a href="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
+                登录
+              </a>
+            )}
           </div>
         </div>
-        <div className="navtabs">
-          {tabs.map(([k, label]) => (
-            <button key={k} className={"tab" + (tab === k ? " active" : "")} onClick={() => setTab(k)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {me && (
-          <button className="chip" onClick={onToggleChat} title="留言">
-            <Icon name="chat" size={12} /> 留言
-          </button>
-        )}
-        <button className="chip" onClick={onToggleActivity} title="最近动态">
-          <Icon name="bell" size={12} /> 动态
-        </button>
-        <div className="identity">
-          {me ? (
-            <>
-              <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
-                {me.name.slice(0, 1)}
-              </button>
-              <button className="signout-btn" onClick={onSignOut}>
-                退出登录
-              </button>
-            </>
-          ) : (
-            <a href="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
-              登录
-            </a>
-          )}
-        </div>
       </div>
-    </div>
+      {/* Duplicate of .navtabs rendered OUTSIDE .topbar so its mobile
+          position:fixed anchors to the real viewport, not to .topbar's
+          backdrop-filter containing block. Desktop hides this one. */}
+      <nav className="navtabs-mobile" aria-label="页面导航">
+        {tabButtons}
+      </nav>
+    </>
   );
 }
 

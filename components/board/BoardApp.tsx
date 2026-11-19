@@ -1741,12 +1741,18 @@ function ActivityPanel({ open, onClose, log }) {
   );
 }
 
-function ChatPanel({ open, onClose, messages, me, onSend, onDelete }) {
+function ChatPanel({ open, onClose, messages, me, onSend, onDelete, onMarkRead }) {
   const profiles = useProfiles();
   const [draft, setDraft] = useState("");
   const bodyRef = useRef(null);
   useEffect(() => {
     if (open && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+  }, [open, messages.length]);
+  // Marks read on open, and again whenever new messages arrive while it's
+  // already open — not just once, so a reply that comes in mid-read still
+  // clears the badge instead of leaving a stale unread count.
+  useEffect(() => {
+    if (open) onMarkRead?.();
   }, [open, messages.length]);
   if (!open) return null;
   const submit = (e) => {
@@ -1824,7 +1830,7 @@ function ChatPanel({ open, onClose, messages, me, onSend, onDelete }) {
 }
 
 /* ============ Topbar ============ */
-function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) {
+function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat, hasUnreadMessages }) {
   const tabs = [
     ["overview", "总览"],
     ["tasks", "待办"],
@@ -1860,8 +1866,9 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
         </div>
         <div className="navtabs">{tabButtons}</div>
         {me && (
-          <button className="chip" onClick={onToggleChat} title="留言">
+          <button className="chip" onClick={onToggleChat} title="留言" style={{ position: "relative" }}>
             <Icon name="chat" size={12} /> 留言
+            {hasUnreadMessages && <span className="unread-dot" />}
           </button>
         )}
         <button className="chip" onClick={onToggleActivity} title="最近动态">
@@ -3409,6 +3416,19 @@ export default function BoardApp({ me: initialMe }) {
     setMessages((ms) => ms.filter((m) => m.id !== id));
     await supabase.from("messages").delete().eq("id", id);
   };
+  // `me` is frozen at first server render (see initialMe above), so its own
+  // messages_read_at never updates — read the live copy from `profiles`
+  // instead, which does get refreshed on every realtime sync.
+  const myProfile = (me && profiles.find((p) => p.member_key === me.member_key)) || me;
+  const hasUnreadMessages = !!me && messages.some(
+    (m) => m.sender !== me.member_key && (!myProfile?.messages_read_at || new Date(m.created_at) > new Date(myProfile.messages_read_at))
+  );
+  const markMessagesRead = async () => {
+    if (!me) return;
+    const now = new Date().toISOString();
+    setProfiles((ps) => ps.map((p) => (p.member_key === me.member_key ? { ...p, messages_read_at: now } : p)));
+    await supabase.from("profiles").update({ messages_read_at: now }).eq("id", me.id);
+  };
 
   useEffect(() => {
     loadAll();
@@ -3927,6 +3947,7 @@ export default function BoardApp({ me: initialMe }) {
         setTab={setTab}
         me={me}
         onSignOut={handleSignOut}
+        hasUnreadMessages={hasUnreadMessages}
         onToggleActivity={() => {
           setActivityOpen((v) => !v);
           setSelected(null);
@@ -3946,7 +3967,15 @@ export default function BoardApp({ me: initialMe }) {
       <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />
       <ActivityPanel open={activityOpen} onClose={() => setActivityOpen(false)} log={activityLog} />
-      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} messages={messages} me={me} onSend={sendMessage} onDelete={deleteMessage} />
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        messages={messages}
+        me={me}
+        onSend={sendMessage}
+        onDelete={deleteMessage}
+        onMarkRead={markMessagesRead}
+      />
     </MembersCtx.Provider>
   );
 }

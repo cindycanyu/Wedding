@@ -31,8 +31,14 @@ create table if not exists public.profiles (
   name text not null,
   bg_color text not null,
   text_color text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  messages_read_at timestamptz
 );
+-- "Have I read 留言 up to here" — a single per-member watermark rather than
+-- a per-message read flag, which is all a 2-person chat needs. Already
+-- covered by the existing profiles_update_self policy (id = auth.uid()),
+-- no new RLS needed.
+alter table public.profiles add column if not exists messages_read_at timestamptz;
 
 -- When someone signs in with an invited email, turn them into a profile automatically.
 create or replace function public.handle_new_user()

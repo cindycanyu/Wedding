@@ -250,11 +250,20 @@ create table if not exists public.daily_tasks (
   status text not null default 'todo' check (status in ('todo','done')),
   is_private boolean not null default false,
   owner text not null check (owner in ('hs','ch')),
+  assignee text,
   notes text not null default '',
   tags text[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 alter table public.daily_tasks add column if not exists tags text[] not null default '{}';
+-- Owner was doing double duty as "who it's for" and "who created it (for
+-- privacy)". Split them: assignee is now the editable responsible person,
+-- owner stays fixed to the creator. Backfill existing rows from owner.
+alter table public.daily_tasks add column if not exists assignee text;
+update public.daily_tasks set assignee = coalesce(assignee, owner) where assignee is null;
+alter table public.daily_tasks alter column assignee set not null;
+alter table public.daily_tasks drop constraint if exists daily_tasks_assignee_check;
+alter table public.daily_tasks add constraint daily_tasks_assignee_check check (assignee in ('hs','ch'));
 
 -- A short, public activity feed ("H.S. just added look Oxford Midnight") for
 -- the sidebar. Append-only: no update policy, and anyone can read it since

@@ -1566,8 +1566,14 @@ function Drawer({ selected, onClose, state }) {
         </div>
         <div className="rowfields">
           <div className="field">
-            <label>截止日期</label>
-            <input type="date" value={d.deadline || ""} onChange={(e) => state.updateDailyTask(id, { deadline: e.target.value || null })} />
+            <label>负责人</label>
+            <select value={d.assignee} onChange={(e) => state.updateDailyTask(id, { assignee: e.target.value })}>
+              {profiles.map((m) => (
+                <option key={m.member_key} value={m.member_key}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field">
             <label>状态</label>
@@ -1576,6 +1582,10 @@ function Drawer({ selected, onClose, state }) {
               <option value="done">已完成</option>
             </select>
           </div>
+        </div>
+        <div className="field">
+          <label>截止日期</label>
+          <input type="date" value={d.deadline || ""} onChange={(e) => state.updateDailyTask(id, { deadline: e.target.value || null })} />
         </div>
         <TagEditor
           tags={d.tags || []}
@@ -2811,14 +2821,14 @@ function Tasks({ state, initialTag }) {
 
 /* ============ Daily page ============ */
 function Daily({ state }) {
-  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const profiles = useProfiles();
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const [addOpen, setAddOpen] = useState(false);
   const tagPool = [...new Set(state.dailyTasks.flatMap((t) => t.tags || []))];
   const visible = state.dailyTasks.filter((t) => {
-    if (ownerFilter !== "all" && t.owner !== ownerFilter) return false;
+    if (assigneeFilter !== "all" && t.assignee !== assigneeFilter) return false;
     if (tagFilter !== "all" && !(t.tags || []).includes(tagFilter)) return false;
     return true;
   });
@@ -2861,11 +2871,11 @@ function Daily({ state }) {
           ))}
         </div>
         <div className="filterbar">
-          <button className={"chip" + (ownerFilter === "all" ? " on" : "")} onClick={() => setOwnerFilter("all")}>
-            全部
+          <button className={"chip" + (assigneeFilter === "all" ? " on" : "")} onClick={() => setAssigneeFilter("all")}>
+            全部负责人
           </button>
           {profiles.map((m) => (
-            <button key={m.member_key} className={"chip" + (ownerFilter === m.member_key ? " on" : "")} onClick={() => setOwnerFilter(m.member_key)}>
+            <button key={m.member_key} className={"chip" + (assigneeFilter === m.member_key ? " on" : "")} onClick={() => setAssigneeFilter(m.member_key)}>
               {m.name}
             </button>
           ))}
@@ -2880,7 +2890,7 @@ function Daily({ state }) {
                 className="taskrow"
                 role="button"
                 tabIndex={0}
-                style={{ borderLeft: "6px solid " + (memberOf(profiles, t.owner)?.bg_color || "var(--line)") }}
+                style={{ borderLeft: "6px solid " + (memberOf(profiles, t.assignee)?.bg_color || "var(--line)") }}
                 onClick={() => (selMode ? toggle(t.id) : state.openDrawer("daily", t.id))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") (selMode ? toggle(t.id) : state.openDrawer("daily", t.id));
@@ -2898,7 +2908,7 @@ function Daily({ state }) {
                 >
                   {done && <Icon name="check" size={13} color="#fff" />}
                 </button>
-                <Avatar id={t.owner} />
+                <Avatar id={t.assignee} />
                 <span className="ttitle" style={done ? { textDecoration: "line-through", opacity: 0.55 } : null}>
                   {t.title}
                 </span>
@@ -2920,7 +2930,7 @@ function Daily({ state }) {
         onCreate={state.addDailyTask}
         tagSuggestions={tagPool}
         events={[]}
-        showAssignee={false}
+        showAssignee
         defaultAssignee={state.me?.member_key}
         suggestedTag={tagFilter !== "all" ? tagFilter : null}
       />
@@ -3693,13 +3703,13 @@ export default function BoardApp({ me: initialMe }) {
     if (data) setTryonResults((rs) => [data, ...rs]);
   };
 
-  const addDailyTask = async ({ title, deadline, tags, isPrivate, notes }) => {
+  const addDailyTask = async ({ title, deadline, tags, isPrivate, notes, assignee }) => {
     if (!requireAuth()) return;
     const { data } = await supabase
       .from("daily_tasks")
       .insert({
         title, deadline: deadline || null, tags: tags || [], owner: me.member_key,
-        status: "todo", is_private: !!isPrivate, notes: notes || "",
+        assignee: assignee || me.member_key, status: "todo", is_private: !!isPrivate, notes: notes || "",
       })
       .select()
       .single();

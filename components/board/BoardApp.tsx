@@ -219,9 +219,9 @@ function DeadlineBadge({ deadline, done }) {
   if (!deadline) return <span className="tmeta">无截止日期</span>;
   const days = daysUntil(deadline);
   if (days === null) return null;
-  if (days < 0) return <span className="countdown">已超期 {-days} 天</span>;
-  if (days === 0) return <span className="countdown">今天到期</span>;
-  if (days <= 3) return <span className="countdown">还剩 {days} 天</span>;
+  if (days < 0) return <span className="countdown alert">已超期 {-days} 天</span>;
+  if (days === 0) return <span className="countdown alert">今天到期</span>;
+  if (days <= 7) return <span className="countdown alert">还剩 {days} 天</span>;
   return (
     <span className="tmeta tabular">
       {deadline} 截止 · 还剩 {days} 天

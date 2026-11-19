@@ -562,6 +562,14 @@ function MultiSelectBar({ me, selMode, count, onToggleMode, onDelete }) {
   );
 }
 
+// "整体进度" isn't a hand-set number — it's how much of this event's tagged
+// task list is done, so it moves on its own as tasks get checked off.
+function eventTaskProgress(evId, tasks) {
+  const related = tasks.filter((t) => (t.tags || []).includes(evId));
+  if (!related.length) return 0;
+  return Math.round((related.filter((t) => t.status === "done").length / related.length) * 100);
+}
+
 /* ============ Tags ============ */
 function tagLabel(tag, events) {
   const ev = events.find((e) => e.id === tag);
@@ -982,8 +990,8 @@ function Drawer({ selected, onClose, state }) {
           <DebouncedField value={ev.witness_name || ""} onCommit={(v) => state.updateEvent(id, { witness_name: v || null })} />
         </div>
         <div className="field">
-          <label>整体进度</label>
-          <RingProgress value={ev.progress} size={60} />
+          <label>整体进度（按相关待办完成比例自动计算）</label>
+          <RingProgress value={eventTaskProgress(id, state.tasks)} size={60} />
         </div>
         <div className="field">
           <label>这场活动相关的内容</label>
@@ -1767,38 +1775,49 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
     <>
       <div className="topbar">
         <div className="wrap topbar-inner">
-          <div className="brandmark">
-            <div className="mono serif">H·C</div>
-            <div className="brand-text">
-              <span className="name">H.S. &amp; C.H.</span>
-              <span className="sub">Wedding Workbook</span>
+          <div className="topbar-row1">
+            <div
+              className="brandmark"
+              role="button"
+              tabIndex={0}
+              style={{ cursor: "pointer" }}
+              onClick={() => setTab("overview")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setTab("overview");
+              }}
+            >
+              <div className="mono serif">H·C</div>
+              <div className="brand-text">
+                <span className="name">H.S. &amp; C.H.</span>
+                <span className="sub">Wedding Workbook</span>
+              </div>
+            </div>
+            {me && (
+              <button className="chip" onClick={onToggleChat} title="留言">
+                <Icon name="chat" size={12} /> 留言
+              </button>
+            )}
+            <button className="chip" onClick={onToggleActivity} title="最近动态">
+              <Icon name="bell" size={12} /> 动态
+            </button>
+            <div className="identity">
+              {me ? (
+                <>
+                  <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
+                    {me.name.slice(0, 1)}
+                  </button>
+                  <button className="signout-btn" onClick={onSignOut}>
+                    退出登录
+                  </button>
+                </>
+              ) : (
+                <a href="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
+                  登录
+                </a>
+              )}
             </div>
           </div>
           <div className="navtabs">{tabButtons}</div>
-          {me && (
-            <button className="chip" onClick={onToggleChat} title="留言">
-              <Icon name="chat" size={12} /> 留言
-            </button>
-          )}
-          <button className="chip" onClick={onToggleActivity} title="最近动态">
-            <Icon name="bell" size={12} /> 动态
-          </button>
-          <div className="identity">
-            {me ? (
-              <>
-                <button className="avatarbtn" style={{ background: me.bg_color, color: me.text_color }} title={me.name}>
-                  {me.name.slice(0, 1)}
-                </button>
-                <button className="signout-btn" onClick={onSignOut}>
-                  退出登录
-                </button>
-              </>
-            ) : (
-              <a href="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
-                登录
-              </a>
-            )}
-          </div>
         </div>
       </div>
       {/* Duplicate of .navtabs rendered OUTSIDE .topbar so its mobile
@@ -1863,7 +1882,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
                 <Cover type={ev.cover} />
                 <span className={"corner-badge badge " + ev.status}>{ev.status_label}</span>
                 <span className="corner-ring">
-                  <RingProgress value={ev.progress} size={44} />
+                  <RingProgress value={eventTaskProgress(ev.id, state.tasks)} size={44} />
                 </span>
               </div>
               <div className="card-body">
@@ -2661,13 +2680,23 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
 /* ============ Tasks page ============ */
 function TaskTagChips({ tags, events }) {
   if (!tags || tags.length === 0) return <span className="tmeta">无标签</span>;
+  // Showing every tag as its own wrapping chip blew up row height on narrow
+  // screens once a task had 3+ tags; show the first and collapse the rest
+  // behind a "…" (full list still available on hover / in the drawer).
+  const rest = tags.slice(1);
   return (
-    <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-      {tags.map((t) => (
-        <span key={t} className="tmeta" style={{ background: "var(--champagne)", borderRadius: 999, padding: "2px 8px" }}>
-          {tagLabel(t, events)}
+    <span style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
+      <span
+        className="tmeta"
+        style={{ background: "var(--champagne)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+      >
+        {tagLabel(tags[0], events)}
+      </span>
+      {rest.length > 0 && (
+        <span className="tmeta" title={rest.map((t) => tagLabel(t, events)).join("、")}>
+          …
         </span>
-      ))}
+      )}
     </span>
   );
 }

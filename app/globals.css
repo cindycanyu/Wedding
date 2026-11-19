@@ -51,14 +51,18 @@ a{color:var(--rose-dark);}
   background:rgba(251,240,243,0.92);backdrop-filter:blur(10px);
   border-bottom:1px solid var(--line);
 }
-.topbar-inner{display:flex;align-items:center;gap:20px;padding:12px 0;flex-wrap:wrap;}
+.topbar-inner{display:flex;flex-direction:column;gap:10px;padding:12px 0;}
+.topbar-row1{display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
 .brandmark{display:flex;align-items:center;gap:10px;}
 .brandmark .mono{width:34px;height:34px;border-radius:50%;background:linear-gradient(145deg,var(--rose),var(--gold));display:flex;align-items:center;justify-content:center;color:var(--cream);font-size:13px;letter-spacing:0.5px;flex:none;}
 .brand-text{display:flex;flex-direction:column;line-height:1.1;}
 .brand-text .name{font-family:'Playfair Display',serif;font-weight:600;font-size:20px;letter-spacing:0.5px;}
 .brand-text .sub{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:var(--plum-soft);}
 
-.navtabs{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;padding:2px 0;}
+/* Its own row below brand/chips/identity, not squeezed into the same line
+   with them — gives the tab strip the full row width to scroll within
+   before it ever needs to on a laptop-width window. */
+.navtabs{display:flex;gap:6px;overflow-x:auto;padding:2px 0;}
 .navtabs::-webkit-scrollbar{display:none;}
 .tab{
   border:1px solid transparent;background:transparent;border-radius:999px;

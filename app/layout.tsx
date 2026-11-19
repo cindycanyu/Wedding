@@ -1,5 +1,33 @@
 import type { Metadata, Viewport } from "next";
+import { Playfair_Display, Cormorant_Garamond, Inter } from "next/font/google";
 import "./globals.css";
+
+// Self-hosted via next/font instead of a <link> to fonts.googleapis.com —
+// Next fetches these once at build time and serves them from our own
+// deployment, so visitors don't need to reach Google's font CDN at all
+// (which is blocked in mainland China, among other places). Same families,
+// same weights/styles as before; look is unchanged for everyone who could
+// already load Google Fonts.
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-cormorant",
+  display: "swap",
+});
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "H.S. & C.H. Wedding Workbook",
@@ -22,14 +50,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="zh-CN">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap"
-        />
-      </head>
+    <html lang="zh-CN" className={`${playfair.variable} ${cormorant.variable} ${inter.variable}`}>
       <body>{children}</body>
     </html>
   );

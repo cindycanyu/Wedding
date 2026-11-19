@@ -2172,7 +2172,7 @@ function Lookbook({ state }) {
       setGenerating(false);
       state.addTryon({
         lookName: dress.name,
-        accessoryNames: tryonAcc.map((a) => state.accessories.find((x) => x.id === a).name),
+        accessoryNames: tryonAcc.map((a) => state.accessories.find((x) => x.id === a)?.name).filter(Boolean),
       });
     }, 1200);
   };
@@ -2369,6 +2369,7 @@ function Lookbook({ state }) {
               {builderAcc.length === 0 && <div className="empty">点选左侧配饰加入造型</div>}
               {builderAcc.map((aid) => {
                 const a = state.accessories.find((x) => x.id === aid);
+                if (!a) return null;
                 return (
                   <div key={aid} className="li">
                     <span>{a.name}</span>

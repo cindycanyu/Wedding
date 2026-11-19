@@ -143,6 +143,13 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M3 12 21 3 14 21l-3-7-8-2z" />
         </svg>
       );
+    case "calendar":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 10h18M8 3v4M16 3v4" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -1812,6 +1819,9 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat }) 
         <button className="chip" onClick={onToggleActivity} title="最近动态">
           <Icon name="bell" size={12} /> 动态
         </button>
+        <a className="chip" href="/api/calendar" title="订阅到手机日历，deadline前会自动提醒">
+          <Icon name="calendar" size={12} /> 订阅日历
+        </a>
         <div className="identity">
           {me ? (
             <>

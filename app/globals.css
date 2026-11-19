@@ -241,9 +241,11 @@ a{color:var(--rose-dark);}
 .vcard .vquote{font-family:var(--font-playfair),serif;font-size:20px;font-weight:600;margin-top:10px;}
 .vcard .vfoot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
 .countdown{font-size:11px;font-weight:700;color:var(--critical);background:#F6E3E1;padding:3px 9px;border-radius:999px;}
-/* 7 天内到期的待办/Daily 泡泡整个变紫红色，作为醒目提醒；颜色写死不跟主题
-   token 走，这样在 Daily 的暖白主题里看到的"紧急"信号也和待办页一致。 */
-.countdown.alert{color:#fff;background:#9B2D6B;}
+/* 7 天内到期（含超期/今天）的待办/Daily，整行变紫红色提醒；倒计时徽章本身
+   保持原来的红色不变。颜色写死不跟主题 token 走，这样 Daily 暖白主题里的
+   "紧急"信号也和待办页一致。 */
+.taskrow.alert{background:#F4DCEC;}
+.taskrow.alert:hover{box-shadow:0 6px 16px rgba(155,45,107,.22);}
 
 .barstack{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--champagne);gap:2px;}
 .barstack span{display:block;height:100%;}

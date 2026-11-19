@@ -214,14 +214,21 @@ function daysUntil(dateStr) {
   if (isNaN(d)) return null;
   return Math.round((d - today) / 86400000);
 }
+// Whether a task/daily row gets the purple-red alert treatment — the whole
+// row, not just the countdown badge (which keeps its own red styling).
+function isDeadlineAlert(deadline, done) {
+  if (done || !deadline) return false;
+  const days = daysUntil(deadline);
+  return days !== null && days <= 7;
+}
 function DeadlineBadge({ deadline, done }) {
   if (done) return <span className="statuspill done">已完成</span>;
   if (!deadline) return <span className="tmeta">无截止日期</span>;
   const days = daysUntil(deadline);
   if (days === null) return null;
-  if (days < 0) return <span className="countdown alert">已超期 {-days} 天</span>;
-  if (days === 0) return <span className="countdown alert">今天到期</span>;
-  if (days <= 7) return <span className="countdown alert">还剩 {days} 天</span>;
+  if (days < 0) return <span className="countdown">已超期 {-days} 天</span>;
+  if (days === 0) return <span className="countdown">今天到期</span>;
+  if (days <= 7) return <span className="countdown">还剩 {days} 天</span>;
   return (
     <span className="tmeta tabular">
       {deadline} 截止 · 还剩 {days} 天
@@ -2805,7 +2812,7 @@ function Tasks({ state, initialTag }) {
             return (
               <div
                 key={t.id}
-                className="taskrow"
+                className={"taskrow" + (isDeadlineAlert(t.deadline, done) ? " alert" : "")}
                 role="button"
                 tabIndex={0}
                 style={{ borderLeft: "6px solid " + (memberOf(profiles, t.assignee)?.bg_color || "var(--line)") }}
@@ -2922,7 +2929,7 @@ function Daily({ state }) {
             return (
               <div
                 key={t.id}
-                className="taskrow"
+                className={"taskrow" + (isDeadlineAlert(t.deadline, done) ? " alert" : "")}
                 role="button"
                 tabIndex={0}
                 style={{ borderLeft: "6px solid " + (memberOf(profiles, t.assignee)?.bg_color || "var(--line)") }}

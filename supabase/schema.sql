@@ -238,8 +238,10 @@ create table if not exists public.run_of_show_nodes (
   location text not null default '',
   responsible text not null,              -- member_key, or a plain name for a non-member (e.g. the witness)
   notes text not null default '',
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  node_date date                           -- optional; groups the flow view by day for multi-day events
 );
+alter table public.run_of_show_nodes add column if not exists node_date date;
 
 -- Everyday life to-dos, unrelated to the wedding itself. Same privacy model as
 -- tasks (owner-only when private), kept in its own table/tab on purpose.

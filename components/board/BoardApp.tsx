@@ -171,19 +171,23 @@ const STATUS_META = {
 };
 const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
-const STATUS_SORT_PRIORITY = { doing: 0, todo: 1, done: 2 };
-// Shared by Tasks and Daily: in-progress first, done last, and within each
-// group the nearer deadline first (no-deadline items sink to the bottom of
-// their group).
+// Shared by Tasks and Daily: done always sinks to the bottom regardless of
+// its deadline; among the rest, nearest deadline first (no-deadline items
+// come after any with one); "doing" only breaks ties (same deadline, or
+// both have no deadline).
 function sortTaskList(items) {
   return [...items].sort((a, b) => {
-    const pa = STATUS_SORT_PRIORITY[a.status] ?? 1;
-    const pb = STATUS_SORT_PRIORITY[b.status] ?? 1;
-    if (pa !== pb) return pa - pb;
-    if (!a.deadline && !b.deadline) return 0;
-    if (!a.deadline) return 1;
-    if (!b.deadline) return -1;
-    return a.deadline.localeCompare(b.deadline);
+    const aDone = a.status === "done";
+    const bDone = b.status === "done";
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    if (a.deadline !== b.deadline) {
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return a.deadline.localeCompare(b.deadline);
+    }
+    const pa = a.status === "doing" ? 0 : 1;
+    const pb = b.status === "doing" ? 0 : 1;
+    return pa - pb;
   });
 }
 const RATE = 6.7; // fixed USD->CNY rate; good enough for a personal budget estimate
@@ -213,6 +217,13 @@ function daysUntil(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   if (isNaN(d)) return null;
   return Math.round((d - today) / 86400000);
+}
+const WEEKDAY_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+function formatNodeDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d)) return null;
+  return { label: `${d.getMonth() + 1}月${d.getDate()}日`, weekday: WEEKDAY_ZH[d.getDay()] };
 }
 // Whether a task/daily row gets the purple-red alert treatment — the whole
 // row, not just the countdown badge (which keeps its own red styling).
@@ -755,6 +766,14 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
                 <div className="field" key={f.key}>
                   <label>{f.label}</label>
                   <NumberField value={v} onCommit={(n) => set(f.key, n)} autoFocus={f.autoFocus} />
+                </div>
+              );
+            }
+            if (f.type === "date") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <input type="date" autoFocus={f.autoFocus} value={v ?? ""} onChange={(e) => set(f.key, e.target.value || null)} />
                 </div>
               );
             }
@@ -1430,13 +1449,17 @@ function Drawer({ selected, onClose, state }) {
       <>
         <div className="rowfields">
           <div className="field">
+            <label>日期（可选）</label>
+            <input type="date" value={n.node_date || ""} onChange={(e) => state.updateNode(id, { node_date: e.target.value || null })} />
+          </div>
+          <div className="field">
             <label>时间</label>
             <DebouncedField value={n.time_label} onCommit={(v) => state.updateNode(id, { time_label: v })} />
           </div>
-          <div className="field">
-            <label>标题</label>
-            <DebouncedField value={n.title} onCommit={(v) => state.updateNode(id, { title: v })} />
-          </div>
+        </div>
+        <div className="field">
+          <label>标题</label>
+          <DebouncedField value={n.title} onCommit={(v) => state.updateNode(id, { title: v })} />
         </div>
         <div className="field">
           <label>地点</label>
@@ -2990,6 +3013,28 @@ function RunOfShow({ state, evTab, setEvTab }) {
   const [addOpen, setAddOpen] = useState(false);
   const nodes = state.nodesByEvent[evTab] || [];
   const ev = state.events.find((e) => e.id === evTab);
+
+  // Group into date buckets so a multi-day event reads as separate flows,
+  // each in sort_order (the manual within-day ordering already in place);
+  // undated nodes (the common case for a single-day event) get one bucket
+  // with no header, same as before this feature existed.
+  const groups = [];
+  for (const n of nodes) {
+    const key = n.node_date || "__undated";
+    let g = groups.find((g) => g.key === key);
+    if (!g) {
+      g = { key, date: n.node_date, items: [] };
+      groups.push(g);
+    }
+    g.items.push(n);
+  }
+  groups.sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+
   return (
     <div className="wrap">
       <div className="section">
@@ -3012,20 +3057,33 @@ function RunOfShow({ state, evTab, setEvTab }) {
         {nodes.length === 0 ? (
           <div className="empty-state">还没有流程节点</div>
         ) : (
-          <div className="timeline">
-            {nodes.map((n) => (
-              <div key={n.id} className="tnode" onClick={() => state.openDrawer("node", n.id)}>
-                <span className="dot">
-                  <Icon name="pin" size={11} color="#fff" />
-                </span>
-                <div className="card2">
-                  <div className="time tabular">{n.time_label}</div>
-                  <div className="ttl">{n.title}</div>
-                  <div className="loc">{n.location}</div>
+          groups.map((g) => {
+            const fd = formatNodeDate(g.date);
+            return (
+              <div key={g.key} className="rosday">
+                {fd && (
+                  <div className="rosday-head">
+                    <span className="d1">{fd.label}</span>
+                    <span className="d2">{fd.weekday}</span>
+                  </div>
+                )}
+                <div className="timeline">
+                  {g.items.map((n) => (
+                    <div key={n.id} className="tnode" onClick={() => state.openDrawer("node", n.id)}>
+                      <span className="dot">
+                        <Icon name="pin" size={13} color="#fff" />
+                      </span>
+                      <div className="card2">
+                        <div className="time tabular">{n.time_label || "时间待定"}</div>
+                        <div className="ttl">{n.title}</div>
+                        {n.location && <div className="loc">{n.location}</div>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })
         )}
         {ev?.status === "tbd" && <p className="note" style={{ marginTop: 12 }}>该活动日程仍为草稿，细节确认后将同步更新。</p>}
       </div>
@@ -3036,6 +3094,7 @@ function RunOfShow({ state, evTab, setEvTab }) {
         onCreate={(values) => state.addNode(evTab, values)}
         fields={[
           { key: "title", label: "标题", required: true, autoFocus: true },
+          { key: "node_date", label: "日期（可选，多天流程用来分组）", type: "date" },
           { key: "time_label", label: "时间" },
           { key: "location", label: "地点" },
           { key: "notes", label: "执行细节 / 注意事项", type: "textarea" },
@@ -3696,7 +3755,7 @@ export default function BoardApp({ me: initialMe }) {
     setRunOfShowNodes((ns) => ns.map((n) => (n.id === id ? { ...n, ...patch } : n)));
     await supabase.from("run_of_show_nodes").update(patch).eq("id", id);
   };
-  const addNode = async (eventId, { title, time_label, location, notes }) => {
+  const addNode = async (eventId, { title, time_label, location, notes, node_date }) => {
     if (!requireAuth()) return;
     const existing = nodesByEvent[eventId] || [];
     const sortOrder = existing.length ? Math.max(...existing.map((n) => n.sort_order)) + 1 : 1;
@@ -3704,7 +3763,7 @@ export default function BoardApp({ me: initialMe }) {
       .from("run_of_show_nodes")
       .insert({
         event_id: eventId, title, time_label: time_label || "", location: location || "",
-        responsible: me.member_key, notes: notes || "", sort_order: sortOrder,
+        responsible: me.member_key, notes: notes || "", sort_order: sortOrder, node_date: node_date || null,
       })
       .select()
       .single();

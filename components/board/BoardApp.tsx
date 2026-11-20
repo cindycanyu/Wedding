@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 /* ============ members ============ */
@@ -179,6 +179,7 @@ const STATUS_META = {
 };
 const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
+const VALID_TABS = new Set(["overview", "tasks", "inventory", "lookbook", "runofshow", "vendors", "daily", "log"]);
 // Shared by Tasks and Daily: done always sinks to the bottom regardless of
 // its deadline; among the rest, nearest deadline first (no-deadline items
 // come after any with one); "doing" only breaks ties (same deadline, or
@@ -3711,6 +3712,7 @@ function VendorsBudget({ state, initialEventFilter }) {
 export default function BoardApp({ me: initialMe }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const me = initialMe;
 
   const [loading, setLoading] = useState(true);
@@ -3730,7 +3732,17 @@ export default function BoardApp({ me: initialMe }) {
   const [messages, setMessages] = useState([]);
   const [weddingLog, setWeddingLog] = useState([]);
 
-  const [tab, setTab] = useState("overview");
+  // Kept in the URL (?tab=...), not just React state, so a reload — or a
+  // bookmarked/shared link — lands back on the same section instead of
+  // always resetting to 总览.
+  const [tab, setTabState] = useState(() => {
+    const t = searchParams.get("tab");
+    return VALID_TABS.has(t) ? t : "overview";
+  });
+  const setTab = (next) => {
+    setTabState(next);
+    router.replace(`/board?tab=${next}`, { scroll: false });
+  };
   const [rosTab, setRosTab] = useState("sf");
   const [invFilter, setInvFilter] = useState("all");
   const [selected, setSelected] = useState(null);

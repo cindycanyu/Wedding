@@ -305,8 +305,10 @@ create table if not exists public.wedding_log (
   content text not null,
   log_date date not null default current_date,
   is_private boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  photo_path text                        -- at most one photo per entry, kept out of the list view on purpose
 );
+alter table public.wedding_log add column if not exists photo_path text;
 
 -- ========== baseline privileges ==========
 -- RLS policies decide *which rows* a query can see; a role still needs the

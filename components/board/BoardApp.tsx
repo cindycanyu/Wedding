@@ -150,6 +150,14 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M3 10h18M8 3v4M16 3v4" />
         </svg>
       );
+    case "image":
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="8.5" cy="9.5" r="1.5" />
+          <path d="M21 16l-5.5-5.5L5 21" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -960,6 +968,7 @@ function AddItemModal({ open, onClose, onCreate, events, tagSuggestions, showAss
 function Drawer({ selected, onClose, state }) {
   const photoInputRef = useRef();
   const lookPhotoInputRef = useRef();
+  const logPhotoInputRef = useRef();
   const [zoomSrc, setZoomSrc] = useState(null);
   const profiles = useProfiles();
   if (!selected) return null;
@@ -1681,6 +1690,50 @@ function Drawer({ selected, onClose, state }) {
         <div className="field">
           <label>日期</label>
           <input type="date" value={l.log_date} onChange={(e) => state.updateLogEntry(id, { log_date: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>图片（最多一张，不会显示在列表里）</label>
+          {l.photo_url ? (
+            <div style={{ position: "relative", width: 110, height: 110 }}>
+              <img
+                src={l.photo_url}
+                onClick={() => setZoomSrc(l.photo_url)}
+                style={{ width: 110, height: 110, borderRadius: 12, objectFit: "cover", cursor: "pointer", display: "block" }}
+              />
+              <button
+                onClick={() => state.removeLogPhoto(id)}
+                aria-label="删除图片"
+                style={{
+                  position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%",
+                  background: "var(--rose-dark)", border: "2px solid var(--cream)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                <Icon name="x" size={11} color="#fff" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                className="btn btn-ghost"
+                onClick={() => logPhotoInputRef.current.click()}
+                style={{ width: 110, height: 110, borderRadius: 12, justifyContent: "center", padding: 0 }}
+              >
+                <Icon name="upload" size={18} />
+              </button>
+              <input
+                ref={logPhotoInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) state.setLogPhoto(id, file);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
         </div>
         <div className="field">
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
@@ -3102,6 +3155,11 @@ function WeddingLog({ state }) {
                       </span>
                       <Avatar id={l.owner} size={18} />
                       <span className="logcontent">{l.content}</span>
+                      {l.photo_path && (
+                        <span className="lockdot" title="点击查看图片">
+                          <Icon name="image" size={13} />
+                        </span>
+                      )}
                       {l.is_private && (
                         <span className="lockdot">
                           <Icon name="lock" size={12} />
@@ -3569,9 +3627,30 @@ export default function BoardApp({ me: initialMe }) {
   };
   const deleteLogEntry = async (id) => {
     if (!requireAuth()) return;
+    const entry = weddingLog.find((l) => l.id === id);
+    if (entry?.photo_path) await supabase.storage.from(PHOTOS_BUCKET).remove([entry.photo_path]);
     setWeddingLog((ls) => ls.filter((l) => l.id !== id));
     await supabase.from("wedding_log").delete().eq("id", id);
     closeDrawer();
+  };
+  const setLogPhoto = async (id, file) => {
+    if (!requireAuth()) return;
+    const prev = weddingLog.find((l) => l.id === id)?.photo_path;
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `log/${id}/${crypto.randomUUID()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(path, file);
+    if (upErr) return;
+    if (prev) await supabase.storage.from(PHOTOS_BUCKET).remove([prev]);
+    setWeddingLog((ls) => ls.map((l) => (l.id === id ? { ...l, photo_path: path } : l)));
+    await supabase.from("wedding_log").update({ photo_path: path }).eq("id", id);
+  };
+  const removeLogPhoto = async (id) => {
+    if (!requireAuth()) return;
+    const prev = weddingLog.find((l) => l.id === id)?.photo_path;
+    if (!prev) return;
+    setWeddingLog((ls) => ls.map((l) => (l.id === id ? { ...l, photo_path: null } : l)));
+    await supabase.storage.from(PHOTOS_BUCKET).remove([prev]);
+    await supabase.from("wedding_log").update({ photo_path: null }).eq("id", id);
   };
 
   useEffect(() => {
@@ -3613,6 +3692,16 @@ export default function BoardApp({ me: initialMe }) {
     runOfShowNodes.forEach((n) => (grouped[n.event_id] ||= []).push(n));
     return grouped;
   }, [runOfShowNodes]);
+  // Public-bucket URLs are pure string templating, no network call — fine
+  // to derive on every render, but memoized to avoid new object identity
+  // on every keystroke elsewhere.
+  const weddingLogWithPhotos = useMemo(
+    () =>
+      weddingLog.map((l) =>
+        l.photo_path ? { ...l, photo_url: supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(l.photo_path).data.publicUrl } : l
+      ),
+    [weddingLog, supabase]
+  );
 
   /* ---------- mutators: optimistic local update + Supabase write ---------- */
   const toggleBudgetTracking = async (id) => {
@@ -4077,10 +4166,12 @@ export default function BoardApp({ me: initialMe }) {
     updateDailyTask,
     toggleDailyTaskDone,
     deleteDailyTask,
-    weddingLog,
+    weddingLog: weddingLogWithPhotos,
     addLogEntry,
     updateLogEntry,
     deleteLogEntry,
+    setLogPhoto,
+    removeLogPhoto,
     openDrawer,
     jumpToEventSection,
   };

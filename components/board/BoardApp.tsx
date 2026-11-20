@@ -3100,10 +3100,14 @@ function Daily({ state }) {
 }
 
 /* ============ Log page ============ */
-function formatLogStamp(iso) {
-  const d = new Date(iso);
+// log_date is the user-editable field; the time-of-day has no separate
+// editable field, so it still comes from created_at. Combining them here
+// (rather than displaying created_at's date part) is what makes editing
+// the date in the drawer actually change what the list shows.
+function formatLogStamp(logDate, createdAtIso) {
+  const t = new Date(createdAtIso);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${logDate} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
 function WeddingLog({ state }) {
   const [draft, setDraft] = useState("");
@@ -3111,7 +3115,10 @@ function WeddingLog({ state }) {
   const profiles = useProfiles();
   const listRef = useRef(null);
 
-  const sorted = [...state.weddingLog].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const sorted = [...state.weddingLog].sort((a, b) => {
+    if (a.log_date !== b.log_date) return a.log_date.localeCompare(b.log_date);
+    return a.created_at.localeCompare(b.created_at);
+  });
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -3136,7 +3143,7 @@ function WeddingLog({ state }) {
             {sorted.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
             {sorted.map((l) => (
               <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
-                <span className="logtime tabular">{formatLogStamp(l.created_at)}</span>
+                <span className="logtime tabular">{formatLogStamp(l.log_date, l.created_at)}</span>
                 <Avatar id={l.owner} size={18} />
                 <span className="logcontent">{l.content}</span>
                 {l.photo_url && (

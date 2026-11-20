@@ -246,7 +246,7 @@ a{color:var(--rose-dark);}
 .loglist{display:flex;flex-direction:column;}
 .logline{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;transition:background .12s;}
 .logline:hover{background:var(--blush-deep);}
-.logtime{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--rose-deep);flex:none;width:118px;}
+.logtime{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--rose-deep);flex:none;width:192px;}
 .logcontent{font-size:14px;color:var(--plum);flex:1;min-width:0;}
 .log-input-bar{
   position:fixed;left:0;right:0;bottom:0;z-index:35;

@@ -233,6 +233,51 @@ function formatNodeDate(dateStr) {
   if (isNaN(d)) return null;
   return { label: `${d.getMonth() + 1}月${d.getDate()}日`, weekday: WEEKDAY_ZH[d.getDay()] };
 }
+// Minimal iCalendar reader for "manually import from an .ics file I exported
+// out of Apple Calendar" — the opposite direction of /api/calendar. Only
+// pulls what a task needs (title/date/notes) out of each VEVENT; anything
+// else in the file (VALARM, timezones, recurrence) is simply ignored rather
+// than supported, since this only ever feeds a one-time manual import.
+function unescapeICal(s) {
+  return String(s || "")
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\");
+}
+function icsDateToISO(v) {
+  const m = /^(\d{4})(\d{2})(\d{2})/.exec(v || "");
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+function parseICSEvents(text) {
+  // RFC5545 line folding: a continuation line starts with a space or tab.
+  const unfolded = text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "");
+  const lines = unfolded.split(/\r\n|\n|\r/);
+  const events = [];
+  let cur = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") {
+      cur = {};
+      continue;
+    }
+    if (line === "END:VEVENT") {
+      if (cur) events.push(cur);
+      cur = null;
+      continue;
+    }
+    if (!cur) continue;
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).split(";")[0];
+    const value = line.slice(idx + 1);
+    if (key === "SUMMARY") cur.summary = unescapeICal(value);
+    else if (key === "DESCRIPTION") cur.description = unescapeICal(value);
+    else if (key === "DTSTART") cur.dtstart = value;
+  }
+  return events
+    .filter((e) => e.summary)
+    .map((e) => ({ summary: e.summary, description: e.description || "", date: icsDateToISO(e.dtstart) }));
+}
 // Whether a task/daily row gets the purple-red alert treatment — the whole
 // row, not just the countdown badge (which keeps its own red styling).
 function isDeadlineAlert(deadline, done) {
@@ -796,6 +841,62 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
             创建
           </button>
         </form>
+      </div>
+    </>
+  );
+}
+
+function ImportIcsModal({ open, onClose, events, onImport }) {
+  const [checked, setChecked] = useState(() => new Set());
+  useEffect(() => {
+    if (open) setChecked(new Set(events.map((_, i) => i)));
+  }, [open, events]);
+  if (!open) return null;
+  const toggle = (i) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="从日历文件导入">
+        <div className="drawer-head">
+          <h3>从日历文件导入</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <div className="drawer-body">
+          {events.length === 0 ? (
+            <div className="empty-state">没有在这个文件里找到可识别的日程</div>
+          ) : (
+            <>
+              <p className="note">勾选要导入成待办的日程，取消勾选的不会导入。</p>
+              {events.map((ev, i) => (
+                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 0" }}>
+                  <input type="checkbox" checked={checked.has(i)} onChange={() => toggle(i)} style={{ width: 16, height: 16, marginTop: 2 }} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{ev.summary}</div>
+                    <div className="tmeta">{ev.date || "无日期"}</div>
+                  </div>
+                </label>
+              ))}
+              <button
+                className="btn btn-primary"
+                type="button"
+                style={{ justifyContent: "center", marginTop: 8 }}
+                onClick={() => {
+                  onImport(events.filter((_, i) => checked.has(i)));
+                  onClose();
+                }}
+              >
+                导入选中的 {checked.size} 条
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </>
   );
@@ -1687,9 +1788,24 @@ function Drawer({ selected, onClose, state }) {
           <label>内容</label>
           <DebouncedField as="textarea" rows="3" value={l.content} onCommit={(val) => state.updateLogEntry(id, { content: val })} />
         </div>
-        <div className="field">
-          <label>日期</label>
-          <input type="date" value={l.log_date} onChange={(e) => state.updateLogEntry(id, { log_date: e.target.value })} />
+        <div className="rowfields">
+          <div className="field">
+            <label>日期</label>
+            <input type="date" value={l.log_date} onChange={(e) => state.updateLogEntry(id, { log_date: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>时间</label>
+            <input
+              type="time"
+              value={new Date(l.created_at).toTimeString().slice(0, 5)}
+              onChange={(e) => {
+                const [hh, mm] = e.target.value.split(":").map(Number);
+                const d = new Date(l.created_at);
+                d.setHours(hh, mm, 0, 0);
+                state.updateLogEntry(id, { created_at: d.toISOString() });
+              }}
+            />
+          </div>
         </div>
         <div className="field">
           <label>图片（最多一张，不会显示在列表里）</label>
@@ -2870,6 +2986,9 @@ function Tasks({ state, initialTag }) {
   const profiles = useProfiles();
   const { selMode, selected, toggle, toggleMode, reset } = useMultiSelect();
   const [addOpen, setAddOpen] = useState(false);
+  const [icsEvents, setIcsEvents] = useState([]);
+  const [icsOpen, setIcsOpen] = useState(false);
+  const icsInputRef = useRef();
   const tagPool = [...new Set([...state.events.map((e) => e.id), ...state.tasks.flatMap((t) => t.tags || [])])];
   // RLS already hides other people's private tasks server-side — no client-side privacy filter needed.
   const visible = sortTaskList(
@@ -2899,6 +3018,25 @@ function Tasks({ state, initialTag }) {
               <Icon name="plus" size={13} /> 添加待办
             </button>
           )}
+          {state.me && (
+            <button className="btn btn-ghost" onClick={() => icsInputRef.current.click()}>
+              <Icon name="calendar" size={13} /> 从日历文件导入
+            </button>
+          )}
+          <input
+            ref={icsInputRef}
+            type="file"
+            accept=".ics,text/calendar"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const text = await file.text();
+              setIcsEvents(parseICSEvents(text));
+              setIcsOpen(true);
+              e.target.value = "";
+            }}
+          />
         </div>
         <div className="filterbar">
           <button className={"chip" + (tagFilter === "all" ? " on" : "")} onClick={() => setTagFilter("all")}>
@@ -2976,6 +3114,23 @@ function Tasks({ state, initialTag }) {
         showAssignee
         defaultAssignee={state.me?.member_key}
         suggestedTag={tagFilter !== "all" ? tagFilter : null}
+      />
+      <ImportIcsModal
+        open={icsOpen}
+        onClose={() => setIcsOpen(false)}
+        events={icsEvents}
+        onImport={(selected) => {
+          selected.forEach((ev) => {
+            state.addTask({
+              title: ev.summary,
+              deadline: ev.date,
+              tags: tagFilter !== "all" ? [tagFilter] : [],
+              isPrivate: false,
+              notes: ev.description,
+              assignee: state.me?.member_key,
+            });
+          });
+        }}
       />
     </div>
   );
@@ -3101,13 +3256,21 @@ function Daily({ state }) {
 
 /* ============ Log page ============ */
 // log_date is the user-editable field; the time-of-day has no separate
-// editable field, so it still comes from created_at. Combining them here
-// (rather than displaying created_at's date part) is what makes editing
-// the date in the drawer actually change what the list shows.
+// column, so it's read from (and, when edited, written back into) just the
+// time portion of created_at. Combining them here — rather than displaying
+// created_at's own date part — is what makes editing the date in the
+// drawer actually change what the list shows.
+function tzOffsetLabel(date) {
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `UTC${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
 function formatLogStamp(logDate, createdAtIso) {
   const t = new Date(createdAtIso);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${logDate} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  return `${logDate} ${pad(t.getHours())}:${pad(t.getMinutes())} ${tzOffsetLabel(t)}`;
 }
 function WeddingLog({ state }) {
   const [draft, setDraft] = useState("");

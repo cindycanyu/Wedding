@@ -158,6 +158,13 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M21 16l-5.5-5.5L5 21" />
         </svg>
       );
+    case "edit":
+      return (
+        <svg {...common}>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      );
     case "flower":
       return (
         <svg {...common}>
@@ -3359,19 +3366,21 @@ function WeddingLog({ state }) {
           <div className="loglist" ref={listRef}>
             {sorted.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
             {sorted.map((l) => (
-              <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
+              <div key={l.id} className="logline">
                 <span className="logtime tabular">{formatLogStamp(l.created_at, l.tz_offset_min)}</span>
                 <Avatar id={l.owner} size={18} />
-                <span className="logcontent">{l.content}</span>
+                <span
+                  className="logcontent"
+                  role={l.photo_url ? "button" : undefined}
+                  tabIndex={l.photo_url ? 0 : undefined}
+                  style={l.photo_url ? { cursor: "pointer" } : undefined}
+                  title={l.photo_url ? "点击查看图片" : undefined}
+                  onClick={() => l.photo_url && setZoomSrc(l.photo_url)}
+                >
+                  {l.content}
+                </span>
                 {l.photo_url && (
-                  <span
-                    className="lockdot"
-                    title="点击查看图片"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setZoomSrc(l.photo_url);
-                    }}
-                  >
+                  <span className="lockdot" title="这条日志配了图片">
                     <Icon name="image" size={13} />
                   </span>
                 )}
@@ -3380,6 +3389,14 @@ function WeddingLog({ state }) {
                     <Icon name="lock" size={12} />
                   </span>
                 )}
+                <button
+                  className="lockdot"
+                  title="编辑这条日志"
+                  style={{ border: "none", background: "none", cursor: "pointer" }}
+                  onClick={() => state.openDrawer("logentry", l.id)}
+                >
+                  <Icon name="edit" size={13} />
+                </button>
               </div>
             ))}
           </div>

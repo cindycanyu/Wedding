@@ -3100,22 +3100,18 @@ function Daily({ state }) {
 }
 
 /* ============ Log page ============ */
+function formatLogStamp(iso) {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 function WeddingLog({ state }) {
   const [draft, setDraft] = useState("");
+  const [zoomSrc, setZoomSrc] = useState(null);
   const profiles = useProfiles();
   const listRef = useRef(null);
 
   const sorted = [...state.weddingLog].sort((a, b) => a.created_at.localeCompare(b.created_at));
-  const groups = [];
-  for (const l of sorted) {
-    const key = l.log_date;
-    let g = groups.find((g) => g.key === key);
-    if (!g) {
-      g = { key, items: [] };
-      groups.push(g);
-    }
-    g.items.push(l);
-  }
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -3137,39 +3133,31 @@ function WeddingLog({ state }) {
             <span className="meta">一行一条，记下今天完成了什么</span>
           </div>
           <div className="loglist" ref={listRef}>
-            {groups.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
-            {groups.map((g) => {
-              const fd = formatNodeDate(g.key);
-              return (
-                <div key={g.key} className="logday">
-                  {fd && (
-                    <div className="logday-head">
-                      <span>{fd.label}</span>
-                      <span>{fd.weekday}</span>
-                    </div>
-                  )}
-                  {g.items.map((l) => (
-                    <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
-                      <span className="logtime tabular">
-                        {new Date(l.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
-                      </span>
-                      <Avatar id={l.owner} size={18} />
-                      <span className="logcontent">{l.content}</span>
-                      {l.photo_path && (
-                        <span className="lockdot" title="点击查看图片">
-                          <Icon name="image" size={13} />
-                        </span>
-                      )}
-                      {l.is_private && (
-                        <span className="lockdot">
-                          <Icon name="lock" size={12} />
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
+            {sorted.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
+            {sorted.map((l) => (
+              <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
+                <span className="logtime tabular">{formatLogStamp(l.created_at)}</span>
+                <Avatar id={l.owner} size={18} />
+                <span className="logcontent">{l.content}</span>
+                {l.photo_url && (
+                  <span
+                    className="lockdot"
+                    title="点击查看图片"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setZoomSrc(l.photo_url);
+                    }}
+                  >
+                    <Icon name="image" size={13} />
+                  </span>
+                )}
+                {l.is_private && (
+                  <span className="lockdot">
+                    <Icon name="lock" size={12} />
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -3186,6 +3174,15 @@ function WeddingLog({ state }) {
               <Icon name="send" size={14} />
             </button>
           </form>
+        </div>
+      )}
+      {zoomSrc && (
+        <div
+          className="overlay"
+          style={{ zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+          onClick={() => setZoomSrc(null)}
+        >
+          <img src={zoomSrc} style={{ maxWidth: "100%", maxHeight: "88vh", borderRadius: 14, boxShadow: "0 20px 60px rgba(74,43,51,.4)" }} />
         </div>
       )}
     </>

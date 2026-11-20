@@ -296,6 +296,18 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 
+-- A running, dated changelog of wedding-planning progress ("今天定下了
+-- license的日期") — quick one-line entries, timestamped automatically but
+-- editable afterward, same privacy model as everything else.
+create table if not exists public.wedding_log (
+  id uuid primary key default gen_random_uuid(),
+  owner text not null check (owner in ('hs','ch')),
+  content text not null,
+  log_date date not null default current_date,
+  is_private boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 -- ========== baseline privileges ==========
 -- RLS policies decide *which rows* a query can see; a role still needs the
 -- underlying SQL privilege to query the table at all, or every query fails
@@ -309,13 +321,13 @@ grant select on
   public.profiles, public.events, public.looks, public.accessories,
   public.saved_looks, public.tryon_results, public.inventory_items,
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
-  public.daily_tasks, public.activity_log
+  public.daily_tasks, public.activity_log, public.wedding_log
 to authenticated, anon;
 grant insert, update, delete on
   public.profiles, public.events, public.looks, public.accessories,
   public.saved_looks, public.tryon_results, public.inventory_items,
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
-  public.daily_tasks
+  public.daily_tasks, public.wedding_log
 to authenticated;
 grant insert on public.activity_log to authenticated;
 -- messages: authenticated only, no anon grant at all — this chat is private.
@@ -336,6 +348,7 @@ alter table public.run_of_show_nodes enable row level security;
 alter table public.daily_tasks enable row level security;
 alter table public.activity_log enable row level security;
 alter table public.messages enable row level security;
+alter table public.wedding_log enable row level security;
 alter table public.member_invites enable row level security; -- no policies: deny-all from the API, trigger bypasses via security definer
 
 -- activity_log: anyone can read the feed; only an invited member can post to it.
@@ -405,7 +418,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['tasks','daily_tasks','looks','inventory_items','accessories']
+  foreach t in array array['tasks','daily_tasks','looks','inventory_items','accessories','wedding_log']
   loop
     execute format('drop policy if exists "%s_select" on public.%I', t, t);
     execute format(
@@ -437,7 +450,7 @@ declare
 begin
   foreach t in array array['events','looks','accessories','saved_looks','tryon_results',
     'inventory_items','inventory_photos','tasks','vendors','run_of_show_nodes','profiles',
-    'daily_tasks','activity_log','messages']
+    'daily_tasks','activity_log','messages','wedding_log']
   loop
     if not exists (
       select 1 from pg_publication_tables

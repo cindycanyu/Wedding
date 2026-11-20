@@ -971,7 +971,7 @@ function Drawer({ selected, onClose, state }) {
   const collectionByType = {
     dress: state.looks, inventory: state.inventory, task: state.tasks,
     node: state.runOfShowNodes, vendor: state.vendors, daily: state.dailyTasks, event: state.events,
-    look: state.savedLooks, tryon: state.tryonResults,
+    look: state.savedLooks, tryon: state.tryonResults, logentry: state.weddingLog,
   };
   const coll = collectionByType[type];
   if (coll && !coll.some((x) => x.id === id)) return null;
@@ -1668,6 +1668,36 @@ function Drawer({ selected, onClose, state }) {
     );
   }
 
+  if (type === "logentry") {
+    const l = state.weddingLog.find((x) => x.id === id);
+    title = memberOf(profiles, l.owner)?.name || l.owner;
+    sub = l.log_date;
+    content = (
+      <>
+        <div className="field">
+          <label>内容</label>
+          <DebouncedField as="textarea" rows="3" value={l.content} onCommit={(val) => state.updateLogEntry(id, { content: val })} />
+        </div>
+        <div className="field">
+          <label>日期</label>
+          <input type="date" value={l.log_date} onChange={(e) => state.updateLogEntry(id, { log_date: e.target.value })} />
+        </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={l.is_private}
+              onChange={(e) => state.updateLogEntry(id, { is_private: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+            仅自己可见（私密）
+          </label>
+        </div>
+        {state.me && <DeleteButton onDelete={() => state.deleteLogEntry(id)} label="删除这条日志" />}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="overlay" onClick={onClose} />
@@ -1839,6 +1869,7 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat, ha
     ["runofshow", "当天流程"],
     ["vendors", "供应商 & 预算"],
     ["daily", "Daily"],
+    ["log", "日志"],
   ];
   const tabButtons = tabs.map(([k, label]) => (
     <button key={k} className={"tab" + (tab === k ? " active" : "")} onClick={() => setTab(k)}>
@@ -3015,6 +3046,94 @@ function Daily({ state }) {
   );
 }
 
+/* ============ Log page ============ */
+function WeddingLog({ state }) {
+  const [draft, setDraft] = useState("");
+  const profiles = useProfiles();
+  const listRef = useRef(null);
+
+  const sorted = [...state.weddingLog].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const groups = [];
+  for (const l of sorted) {
+    const key = l.log_date;
+    let g = groups.find((g) => g.key === key);
+    if (!g) {
+      g = { key, items: [] };
+      groups.push(g);
+    }
+    g.items.push(l);
+  }
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [state.weddingLog.length]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    state.addLogEntry(draft);
+    setDraft("");
+  };
+
+  return (
+    <>
+      <div className="wrap" style={{ paddingBottom: 96 }}>
+        <div className="section">
+          <div className="section-head">
+            <h2>日志</h2>
+            <span className="meta">一行一条，记下今天完成了什么</span>
+          </div>
+          <div className="loglist" ref={listRef}>
+            {groups.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
+            {groups.map((g) => {
+              const fd = formatNodeDate(g.key);
+              return (
+                <div key={g.key} className="logday">
+                  {fd && (
+                    <div className="logday-head">
+                      <span>{fd.label}</span>
+                      <span>{fd.weekday}</span>
+                    </div>
+                  )}
+                  {g.items.map((l) => (
+                    <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
+                      <span className="logtime tabular">
+                        {new Date(l.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                      </span>
+                      <Avatar id={l.owner} size={18} />
+                      <span className="logcontent">{l.content}</span>
+                      {l.is_private && (
+                        <span className="lockdot">
+                          <Icon name="lock" size={12} />
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {state.me && (
+        <div className="log-input-bar">
+          <form className="wrap" style={{ display: "flex", gap: 10 }} onSubmit={submit}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="记一笔，比如：今天定下了 SF City Hall 的领证日期…"
+              style={{ flex: 1 }}
+            />
+            <button className="btn btn-primary" type="submit" aria-label="记录">
+              <Icon name="send" size={14} />
+            </button>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ============ Run of Show page ============ */
 function RunOfShow({ state, evTab, setEvTab }) {
   const [addOpen, setAddOpen] = useState(false);
@@ -3331,6 +3450,7 @@ export default function BoardApp({ me: initialMe }) {
   const [dailyTasks, setDailyTasks] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [weddingLog, setWeddingLog] = useState([]);
 
   const [tab, setTab] = useState("overview");
   const [rosTab, setRosTab] = useState("sf");
@@ -3361,7 +3481,7 @@ export default function BoardApp({ me: initialMe }) {
   const loadAll = useCallback(async () => {
     const [
       profilesRes, eventsRes, looksRes, accRes, savedRes, tryonRes,
-      invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes, messagesRes,
+      invRes, tasksRes, vendorsRes, nodesRes, dailyRes, activityRes, messagesRes, logRes,
     ] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*").order("sort_order"),
@@ -3376,6 +3496,7 @@ export default function BoardApp({ me: initialMe }) {
       supabase.from("daily_tasks").select("*").order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(30),
       me ? supabase.from("messages").select("*").order("created_at") : Promise.resolve({ data: [] }),
+      supabase.from("wedding_log").select("*").order("created_at"),
     ]);
     if (profilesRes.data?.length) setProfiles(profilesRes.data);
     if (eventsRes.data) setEvents(eventsRes.data);
@@ -3390,6 +3511,7 @@ export default function BoardApp({ me: initialMe }) {
     if (dailyRes.data) setDailyTasks(dailyRes.data);
     if (activityRes.data) setActivityLog(activityRes.data);
     if (messagesRes.data) setMessages(messagesRes.data);
+    if (logRes.data) setWeddingLog(logRes.data);
     await loadPhotos();
     setLoading(false);
   }, [supabase, loadPhotos, me]);
@@ -3430,6 +3552,28 @@ export default function BoardApp({ me: initialMe }) {
     await supabase.from("profiles").update({ messages_read_at: now }).eq("id", me.id);
   };
 
+  const addLogEntry = async (content) => {
+    if (!requireAuth()) return;
+    const v = (content || "").trim();
+    if (!v) return;
+    const id = crypto.randomUUID();
+    const now = new Date();
+    const row = { id, owner: me.member_key, content: v, log_date: now.toISOString().slice(0, 10), is_private: false, created_at: now.toISOString() };
+    setWeddingLog((ls) => [...ls, row]);
+    await supabase.from("wedding_log").insert({ id, owner: me.member_key, content: v });
+  };
+  const updateLogEntry = async (id, patch) => {
+    if (!requireAuth()) return;
+    setWeddingLog((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    await supabase.from("wedding_log").update(patch).eq("id", id);
+  };
+  const deleteLogEntry = async (id) => {
+    if (!requireAuth()) return;
+    setWeddingLog((ls) => ls.filter((l) => l.id !== id));
+    await supabase.from("wedding_log").delete().eq("id", id);
+    closeDrawer();
+  };
+
   useEffect(() => {
     loadAll();
   }, [loadAll]);
@@ -3456,6 +3600,7 @@ export default function BoardApp({ me: initialMe }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "activity_log" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "wedding_log" }, scheduleReload)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer.current);
@@ -3932,6 +4077,10 @@ export default function BoardApp({ me: initialMe }) {
     updateDailyTask,
     toggleDailyTaskDone,
     deleteDailyTask,
+    weddingLog,
+    addLogEntry,
+    updateLogEntry,
+    deleteLogEntry,
     openDrawer,
     jumpToEventSection,
   };
@@ -3964,6 +4113,7 @@ export default function BoardApp({ me: initialMe }) {
       {tab === "runofshow" && <RunOfShow state={state} evTab={rosTab} setEvTab={setRosTab} />}
       {tab === "vendors" && <VendorsBudget state={state} initialEventFilter={eventJump} />}
       {tab === "daily" && <Daily state={state} />}
+      {tab === "log" && <WeddingLog state={state} />}
       <footer>H.S. &amp; C.H. · 云端工作台 · 公开可看，登录后才能修改</footer>
       <Drawer selected={selected} onClose={closeDrawer} state={state} />
       <ActivityPanel open={activityOpen} onClose={() => setActivityOpen(false)} log={activityLog} />

@@ -1781,7 +1781,9 @@ function Drawer({ selected, onClose, state }) {
   if (type === "logentry") {
     const l = state.weddingLog.find((x) => x.id === id);
     title = memberOf(profiles, l.owner)?.name || l.owner;
-    sub = l.log_date;
+    sub = formatLogStamp(l.created_at, l.tz_offset_min);
+    const wc = getWallClock(l.created_at, l.tz_offset_min);
+    const pad2 = (n) => String(n).padStart(2, "0");
     content = (
       <>
         <div className="field">
@@ -1791,21 +1793,45 @@ function Drawer({ selected, onClose, state }) {
         <div className="rowfields">
           <div className="field">
             <label>日期</label>
-            <input type="date" value={l.log_date} onChange={(e) => state.updateLogEntry(id, { log_date: e.target.value })} />
+            <input
+              type="date"
+              value={`${wc.y}-${pad2(wc.mo + 1)}-${pad2(wc.d)}`}
+              onChange={(e) => {
+                const [y, mo, d] = e.target.value.split("-").map(Number);
+                const newIso = wallClockToUTC(y, mo - 1, d, wc.h, wc.mi, l.tz_offset_min);
+                state.updateLogEntry(id, { created_at: newIso, log_date: e.target.value });
+              }}
+            />
           </div>
           <div className="field">
             <label>时间</label>
             <input
               type="time"
-              value={new Date(l.created_at).toTimeString().slice(0, 5)}
+              value={`${pad2(wc.h)}:${pad2(wc.mi)}`}
               onChange={(e) => {
                 const [hh, mm] = e.target.value.split(":").map(Number);
-                const d = new Date(l.created_at);
-                d.setHours(hh, mm, 0, 0);
-                state.updateLogEntry(id, { created_at: d.toISOString() });
+                const newIso = wallClockToUTC(wc.y, wc.mo, wc.d, hh, mm, l.tz_offset_min);
+                state.updateLogEntry(id, { created_at: newIso });
               }}
             />
           </div>
+        </div>
+        <div className="field">
+          <label>时区（改时区会保留显示的日期时间，只是换一种读法）</label>
+          <select
+            value={l.tz_offset_min}
+            onChange={(e) => {
+              const newOffset = Number(e.target.value);
+              const newIso = wallClockToUTC(wc.y, wc.mo, wc.d, wc.h, wc.mi, newOffset);
+              state.updateLogEntry(id, { created_at: newIso, tz_offset_min: newOffset });
+            }}
+          >
+            {tzSelectOptions(l.tz_offset_min).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field">
           <label>图片（最多一张，不会显示在列表里）</label>
@@ -3255,22 +3281,49 @@ function Daily({ state }) {
 }
 
 /* ============ Log page ============ */
-// log_date is the user-editable field; the time-of-day has no separate
-// column, so it's read from (and, when edited, written back into) just the
-// time portion of created_at. Combining them here — rather than displaying
-// created_at's own date part — is what makes editing the date in the
-// drawer actually change what the list shows.
-function tzOffsetLabel(date) {
-  const offsetMin = -date.getTimezoneOffset();
+// A log entry's displayed date/time is fixed to whatever timezone it's
+// tagged with (tz_offset_min, minutes east of UTC) — not derived from
+// whoever happens to be viewing the page, since the two of you may well be
+// in different zones when one of you reads an entry the other wrote.
+// created_at stays the single source of truth (a real UTC instant);
+// log_date/the time field/the timezone picker are each just a view onto
+// it, and editing any one of them reconstructs created_at so the other two
+// stay consistent.
+const TZ_OPTIONS = [
+  { label: "美国太平洋时间 (UTC-8)", value: -480 },
+  { label: "美国太平洋夏令时 (UTC-7)", value: -420 },
+  { label: "美国东部时间 (UTC-5)", value: -300 },
+  { label: "美国东部夏令时 (UTC-4)", value: -240 },
+  { label: "中国标准时间 (UTC+8)", value: 480 },
+  { label: "格林尼治时间 (UTC+0)", value: 0 },
+];
+function tzSelectOptions(current) {
+  if (TZ_OPTIONS.some((o) => o.value === current)) return TZ_OPTIONS;
+  return [...TZ_OPTIONS, { label: `当前 (${offsetLabel(current)})`, value: current }];
+}
+function offsetLabel(offsetMin) {
   const sign = offsetMin >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMin);
   const pad = (n) => String(n).padStart(2, "0");
   return `UTC${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
-function formatLogStamp(logDate, createdAtIso) {
-  const t = new Date(createdAtIso);
+// The wall-clock date/time an instant reads as under a fixed UTC offset.
+function getWallClock(createdAtIso, offsetMin) {
+  const shifted = new Date(new Date(createdAtIso).getTime() + offsetMin * 60000);
+  return {
+    y: shifted.getUTCFullYear(), mo: shifted.getUTCMonth(), d: shifted.getUTCDate(),
+    h: shifted.getUTCHours(), mi: shifted.getUTCMinutes(),
+  };
+}
+// The reverse: given wall-clock components meant to be read under a fixed
+// UTC offset, the real UTC instant that produces them.
+function wallClockToUTC(y, mo, d, h, mi, offsetMin) {
+  return new Date(Date.UTC(y, mo, d, h, mi, 0) - offsetMin * 60000).toISOString();
+}
+function formatLogStamp(createdAtIso, offsetMin) {
+  const wc = getWallClock(createdAtIso, offsetMin);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${logDate} ${pad(t.getHours())}:${pad(t.getMinutes())} ${tzOffsetLabel(t)}`;
+  return `${wc.y}-${pad(wc.mo + 1)}-${pad(wc.d)} ${pad(wc.h)}:${pad(wc.mi)} ${offsetLabel(offsetMin)}`;
 }
 function WeddingLog({ state }) {
   const [draft, setDraft] = useState("");
@@ -3306,7 +3359,7 @@ function WeddingLog({ state }) {
             {sorted.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
             {sorted.map((l) => (
               <div key={l.id} className="logline" role="button" tabIndex={0} onClick={() => state.openDrawer("logentry", l.id)}>
-                <span className="logtime tabular">{formatLogStamp(l.log_date, l.created_at)}</span>
+                <span className="logtime tabular">{formatLogStamp(l.created_at, l.tz_offset_min)}</span>
                 <Avatar id={l.owner} size={18} />
                 <span className="logcontent">{l.content}</span>
                 {l.photo_url && (
@@ -3783,9 +3836,16 @@ export default function BoardApp({ me: initialMe }) {
     if (!v) return;
     const id = crypto.randomUUID();
     const now = new Date();
-    const row = { id, owner: me.member_key, content: v, log_date: now.toISOString().slice(0, 10), is_private: false, created_at: now.toISOString() };
+    const tzOffsetMin = -now.getTimezoneOffset();
+    const wc = getWallClock(now.toISOString(), tzOffsetMin);
+    const pad = (n) => String(n).padStart(2, "0");
+    const row = {
+      id, owner: me.member_key, content: v, is_private: false,
+      created_at: now.toISOString(), tz_offset_min: tzOffsetMin,
+      log_date: `${wc.y}-${pad(wc.mo + 1)}-${pad(wc.d)}`,
+    };
     setWeddingLog((ls) => [...ls, row]);
-    await supabase.from("wedding_log").insert({ id, owner: me.member_key, content: v });
+    await supabase.from("wedding_log").insert(row);
   };
   const updateLogEntry = async (id, patch) => {
     if (!requireAuth()) return;

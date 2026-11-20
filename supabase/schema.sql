@@ -306,9 +306,11 @@ create table if not exists public.wedding_log (
   log_date date not null default current_date,
   is_private boolean not null default false,
   created_at timestamptz not null default now(),
-  photo_path text                        -- at most one photo per entry, kept out of the list view on purpose
+  photo_path text,                        -- at most one photo per entry, kept out of the list view on purpose
+  tz_offset_min int not null default -480  -- minutes east of UTC the displayed/edited wall-clock time is fixed to
 );
 alter table public.wedding_log add column if not exists photo_path text;
+alter table public.wedding_log add column if not exists tz_offset_min int not null default -480;
 
 -- ========== baseline privileges ==========
 -- RLS policies decide *which rows* a query can see; a role still needs the

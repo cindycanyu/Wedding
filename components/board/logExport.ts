@@ -4,10 +4,11 @@
 // ImageBitmaps rather than drawn from <img> tags, so a cross-origin storage
 // URL can't taint the canvas and make toBlob() throw.
 
-const W = 750;
+const W = 900;
 const PAD = 48;
-const INNER = W - PAD * 2;
-const THUMB = 200;
+const THUMB = 160;
+const STAMP_GAP = 24;
+const LINE_H = 40;
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const C = {
   bg: "#FFFCFA",
@@ -94,7 +95,10 @@ function drawCover(ctx, img, x, y, w, h, r) {
 }
 
 /**
- * entries: [{ stamp, author, content, photoUrl }] in display order.
+ * entries: [{ stamp, content, photoUrl }] in display order.
+ * Laid out like a terminal log: timestamp column on the left, content on
+ * the same line to its right, and long content wrapping within its own
+ * column (hanging indent) rather than back under the timestamp.
  * Returns { blob, missingPhotos } — missingPhotos counts photos that
  * couldn't be fetched and were left out rather than failing the export.
  */
@@ -106,7 +110,7 @@ export async function renderLogImage(entries, { withPhotos, title, subtitle, foo
     title: `700 40px ${SERIF}`,
     sub: `22px ${SANS}`,
     meta: `20px ${MONO}`,
-    body: `28px ${SANS}`,
+    body: `26px ${SANS}`,
     foot: `18px ${SANS}`,
   };
 
@@ -122,15 +126,19 @@ export async function renderLogImage(entries, { withPhotos, title, subtitle, foo
 
   // Pass 1: measure.
   const m = document.createElement("canvas").getContext("2d");
+  m.font = F.meta;
+  const stampW = Math.ceil(Math.max(0, ...entries.map((e) => m.measureText(e.stamp).width)));
+  const contentX = PAD + stampW + STAMP_GAP;
+  const contentW = W - PAD - contentX;
   m.font = F.body;
-  const bodyLines = entries.map((e) => wrapText(m, e.content, INNER));
+  const bodyLines = entries.map((e) => wrapText(m, e.content, contentW));
   const HEADER = PAD + 48 + 14 + 30 + 28;
   const entryHeights = entries.map((_, i) => {
-    let h = 30 + 10 + bodyLines[i].length * 42;
-    if (bitmaps[i]) h += 16 + THUMB;
+    let h = bodyLines[i].length * LINE_H;
+    if (bitmaps[i]) h += 12 + THUMB;
     return h;
   });
-  const GAP = 44;
+  const GAP = 18;
   const body = entryHeights.reduce((s, h) => s + h, 0) + GAP * Math.max(entries.length - 1, 0);
   const H = HEADER + body + 36 + 30 + PAD;
 
@@ -160,39 +168,19 @@ export async function renderLogImage(entries, { withPhotos, title, subtitle, foo
 
   entries.forEach((e, i) => {
     const top = y;
+    const baseline = y + 28;
     ctx.font = F.meta;
     ctx.fillStyle = C.rose;
-    ctx.fillText(e.stamp, PAD, y + 22);
-    if (e.author) {
-      const stampW = ctx.measureText(e.stamp).width;
-      ctx.fillStyle = C.plumSoft;
-      ctx.fillText(`  · ${e.author}`, PAD + stampW, y + 22);
-    }
-    y += 30 + 10;
+    ctx.fillText(e.stamp, PAD, baseline);
 
     ctx.font = F.body;
     ctx.fillStyle = C.plum;
-    for (const line of bodyLines[i]) {
-      ctx.fillText(line, PAD, y + 30);
-      y += 42;
-    }
+    bodyLines[i].forEach((line, li) => ctx.fillText(line, contentX, baseline + li * LINE_H));
     if (bitmaps[i]) {
-      y += 16;
-      drawCover(ctx, bitmaps[i], PAD, y, THUMB, THUMB, 16);
-      y += THUMB;
+      drawCover(ctx, bitmaps[i], contentX, top + bodyLines[i].length * LINE_H + 12, THUMB, THUMB, 14);
     }
     y = top + entryHeights[i];
-    if (i < entries.length - 1) {
-      ctx.strokeStyle = C.line;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      ctx.moveTo(PAD, y + GAP / 2);
-      ctx.lineTo(W - PAD, y + GAP / 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      y += GAP;
-    }
+    if (i < entries.length - 1) y += GAP;
   });
 
   y += 36;

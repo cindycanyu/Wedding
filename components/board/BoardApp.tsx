@@ -3367,16 +3367,18 @@ function ExportLogModal({ open, onClose, entries }) {
     try {
       const first = chosen[0], last = chosen[chosen.length - 1];
       const range = first ? `${formatLogStamp(first.created_at, first.tz_offset_min).slice(0, 10)} — ${formatLogStamp(last.created_at, last.tz_offset_min).slice(0, 10)}` : "";
+      // One shared timezone goes in the header once, so each line keeps just
+      // "YYYY-MM-DD HH:MM" and the content has room to sit on the same line.
+      const sharedTz = chosen.every((e) => e.tz_offset_min === first?.tz_offset_min);
       const { blob, missingPhotos } = await renderLogImage(
-        chosen.map((e) => ({
-          stamp: formatLogStamp(e.created_at, e.tz_offset_min),
-          content: e.content,
-          photoUrl: e.photo_url,
-        })),
+        chosen.map((e) => {
+          const full = formatLogStamp(e.created_at, e.tz_offset_min);
+          return { stamp: sharedTz ? full.slice(0, 16) : full, content: e.content, photoUrl: e.photo_url };
+        }),
         {
           withPhotos: withPhotos && hasPhotos,
           title: "H.S. & C.H. · 日志",
-          subtitle: `${range} · 共 ${chosen.length} 条`,
+          subtitle: `${range} · 共 ${chosen.length} 条${sharedTz && first ? ` · ${offsetLabel(first.tz_offset_min)}` : ""}`,
           footer: `Wedding Workbook · 导出于 ${today}`,
         }
       );

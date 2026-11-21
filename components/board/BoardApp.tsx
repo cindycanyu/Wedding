@@ -3355,6 +3355,22 @@ function WeddingLog({ state }) {
     setDraft("");
   };
 
+  if (!state.me) {
+    return (
+      <div className="wrap">
+        <div className="section">
+          <div className="section-head">
+            <h2>日志</h2>
+          </div>
+          <div className="empty-state">
+            这部分内容仅 H.S. 和 C.H. 可见（保护日志里可能配的图片），
+            <a href="/login">登录</a>后查看。
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="wrap" style={{ paddingBottom: 96 }}>
@@ -3803,7 +3819,7 @@ export default function BoardApp({ me: initialMe }) {
       supabase.from("daily_tasks").select("*").order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(30),
       me ? supabase.from("messages").select("*").order("created_at") : Promise.resolve({ data: [] }),
-      supabase.from("wedding_log").select("*").order("created_at"),
+      me ? supabase.from("wedding_log").select("*").order("created_at") : Promise.resolve({ data: [] }),
     ]);
     if (profilesRes.data?.length) setProfiles(profilesRes.data);
     if (eventsRes.data) setEvents(eventsRes.data);

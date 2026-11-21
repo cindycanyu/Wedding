@@ -325,7 +325,7 @@ grant select on
   public.profiles, public.events, public.looks, public.accessories,
   public.saved_looks, public.tryon_results, public.inventory_items,
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
-  public.daily_tasks, public.activity_log, public.wedding_log
+  public.daily_tasks, public.activity_log
 to authenticated, anon;
 grant insert, update, delete on
   public.profiles, public.events, public.looks, public.accessories,
@@ -333,6 +333,10 @@ grant insert, update, delete on
   public.inventory_photos, public.tasks, public.vendors, public.run_of_show_nodes,
   public.daily_tasks, public.wedding_log
 to authenticated;
+-- wedding_log: authenticated only, no anon grant at all — see the RLS
+-- comment below for why the whole log (not just private entries) is
+-- members-only.
+grant select on public.wedding_log to authenticated;
 grant insert on public.activity_log to authenticated;
 -- messages: authenticated only, no anon grant at all — this chat is private.
 grant select, insert, delete on public.messages to authenticated;
@@ -373,6 +377,28 @@ create policy "messages_insert" on public.messages for insert
 drop policy if exists "messages_delete" on public.messages;
 create policy "messages_delete" on public.messages for delete
   using (sender = public.current_member_key());
+
+-- wedding_log: members-only to read at all, not just the private rows —
+-- unlike tasks/looks/etc., this is deliberately NOT public-read. Photos
+-- attached to an entry live in the public inventory-photos bucket, so a
+-- photo's URL is reachable by anyone who has it regardless of the
+-- wedding_log table's own RLS; the only real way to keep those photos from
+-- an anonymous visitor is to keep the whole log (and the links inside it)
+-- out of anonymous reach in the first place. Among the two logged-in
+-- members, a private entry still only shows to its own owner.
+drop policy if exists "wedding_log_select" on public.wedding_log;
+create policy "wedding_log_select" on public.wedding_log for select
+  using (public.current_member_key() is not null and (not is_private or owner = public.current_member_key()));
+drop policy if exists "wedding_log_insert" on public.wedding_log;
+create policy "wedding_log_insert" on public.wedding_log for insert
+  with check (public.current_member_key() is not null and (not is_private or owner = public.current_member_key()));
+drop policy if exists "wedding_log_update" on public.wedding_log;
+create policy "wedding_log_update" on public.wedding_log for update
+  using (not is_private or owner = public.current_member_key())
+  with check (not is_private or owner = public.current_member_key());
+drop policy if exists "wedding_log_delete" on public.wedding_log;
+create policy "wedding_log_delete" on public.wedding_log for delete
+  using (not is_private or owner = public.current_member_key());
 
 -- profiles: anyone can see the two member profiles (name/colors for avatars);
 -- you can only edit your own.
@@ -422,7 +448,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['tasks','daily_tasks','looks','inventory_items','accessories','wedding_log']
+  foreach t in array array['tasks','daily_tasks','looks','inventory_items','accessories']
   loop
     execute format('drop policy if exists "%s_select" on public.%I', t, t);
     execute format(

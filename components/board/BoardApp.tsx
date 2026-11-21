@@ -3387,8 +3387,13 @@ function ExportLogModal({ open, onClose, entries }) {
       const { blob, missingPhotos } = await renderLogImage(
         chosen.map((e) => {
           const full = formatLogStamp(e.created_at, e.tz_offset_min);
-          const dt = full.slice(0, 16);
-          return { stamp: sharedTz ? dt : `${dt} ${tzName(e.tz_offset_min, true)}`, content: e.content, photoUrl: e.photo_url };
+          const date = full.slice(0, 10);
+          const time = full.slice(11, 16);
+          return {
+            stamp: sharedTz ? `${date} ${time}` : `${date} ${tzName(e.tz_offset_min, true)} ${time}`,
+            content: e.content,
+            photoUrl: e.photo_url,
+          };
         }),
         {
           withPhotos: withPhotos && hasPhotos,

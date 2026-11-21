@@ -3370,7 +3370,6 @@ function ExportLogModal({ open, onClose, entries }) {
       const { blob, missingPhotos } = await renderLogImage(
         chosen.map((e) => ({
           stamp: formatLogStamp(e.created_at, e.tz_offset_min),
-          author: memberOf(profiles, e.owner)?.name || e.owner,
           content: e.content,
           photoUrl: e.photo_url,
         })),

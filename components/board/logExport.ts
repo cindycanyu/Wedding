@@ -163,9 +163,11 @@ export async function renderLogImage(entries, { withPhotos, title, subtitle, foo
     ctx.font = F.meta;
     ctx.fillStyle = C.rose;
     ctx.fillText(e.stamp, PAD, y + 22);
-    const stampW = ctx.measureText(e.stamp).width;
-    ctx.fillStyle = C.plumSoft;
-    ctx.fillText(`  · ${e.author}`, PAD + stampW, y + 22);
+    if (e.author) {
+      const stampW = ctx.measureText(e.stamp).width;
+      ctx.fillStyle = C.plumSoft;
+      ctx.fillText(`  · ${e.author}`, PAD + stampW, y + 22);
+    }
     y += 30 + 10;
 
     ctx.font = F.body;

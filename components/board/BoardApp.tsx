@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { renderLogImage } from "./logExport";
 
 /* ============ members ============ */
 const MembersCtx = createContext([]);
@@ -3333,9 +3334,151 @@ function formatLogStamp(createdAtIso, offsetMin) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${wc.y}-${pad(wc.mo + 1)}-${pad(wc.d)} ${pad(wc.h)}:${pad(wc.mi)} ${offsetLabel(offsetMin)}`;
 }
+function ExportLogModal({ open, onClose, entries }) {
+  const profiles = useProfiles();
+  const [withPhotos, setWithPhotos] = useState(true);
+  const [includePrivate, setIncludePrivate] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const replaceResult = (next) =>
+    setResult((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return next;
+    });
+  useEffect(() => {
+    if (!open) {
+      replaceResult(null);
+      setBusy(false);
+      setError("");
+    }
+  }, [open]);
+  if (!open) return null;
+
+  const privateCount = entries.filter((e) => e.is_private).length;
+  const chosen = entries.filter((e) => includePrivate || !e.is_private);
+  const hasPhotos = chosen.some((e) => e.photo_url);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const first = chosen[0], last = chosen[chosen.length - 1];
+      const range = first ? `${formatLogStamp(first.created_at, first.tz_offset_min).slice(0, 10)} — ${formatLogStamp(last.created_at, last.tz_offset_min).slice(0, 10)}` : "";
+      const { blob, missingPhotos } = await renderLogImage(
+        chosen.map((e) => ({
+          stamp: formatLogStamp(e.created_at, e.tz_offset_min),
+          author: memberOf(profiles, e.owner)?.name || e.owner,
+          content: e.content,
+          photoUrl: e.photo_url,
+        })),
+        {
+          withPhotos: withPhotos && hasPhotos,
+          title: "H.S. & C.H. · 日志",
+          subtitle: `${range} · 共 ${chosen.length} 条`,
+          footer: `Wedding Workbook · 导出于 ${today}`,
+        }
+      );
+      if (!blob) throw new Error("no blob");
+      replaceResult({ blob, url: URL.createObjectURL(blob), missingPhotos });
+    } catch {
+      setError("生成失败了，换成只导出文字再试一次？");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    const name = `wedding-log-${today}.png`;
+    const file = new File([result.blob], name, { type: "image/png" });
+    if (navigator.canShare?.({ files: [file] }) && matchMedia("(pointer: coarse)").matches) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError") return;
+      }
+    }
+    const a = document.createElement("a");
+    a.href = result.url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="drawer" role="dialog" aria-label="导出长图">
+        <div className="drawer-head">
+          <h3>导出长图</h3>
+          <button className="drawer-close" onClick={onClose} aria-label="关闭">
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+        <div className="drawer-body">
+          {!result ? (
+            <>
+              <div className="field">
+                <label>内容</label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none", letterSpacing: 0, fontSize: 14, color: "var(--plum)", fontWeight: 500 }}>
+                  <input type="radio" checked={!withPhotos} onChange={() => setWithPhotos(false)} />
+                  只导出文字
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none", letterSpacing: 0, fontSize: 14, color: "var(--plum)", fontWeight: 500 }}>
+                  <input type="radio" checked={withPhotos} onChange={() => setWithPhotos(true)} />
+                  文字 + 配图小图{!hasPhotos && "（目前没有配图的日志）"}
+                </label>
+              </div>
+              {privateCount > 0 && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5 }}>
+                  <input type="checkbox" checked={includePrivate} onChange={(e) => setIncludePrivate(e.target.checked)} style={{ width: 14, height: 14 }} />
+                  也导出 {privateCount} 条"仅自己可见"的日志（默认不导出，防止分享时带出私密内容）
+                </label>
+              )}
+              <p className="note">将导出 {chosen.length} 条日志。</p>
+              {error && <p className="note" style={{ color: "var(--critical)" }}>{error}</p>}
+              <button
+                className="btn btn-primary"
+                style={{ justifyContent: "center" }}
+                disabled={busy || chosen.length === 0}
+                onClick={generate}
+              >
+                {busy ? "生成中…" : "生成长图"}
+              </button>
+            </>
+          ) : (
+            <>
+              {result.missingPhotos > 0 && (
+                <p className="note">有 {result.missingPhotos} 张配图没加载出来，已跳过。</p>
+              )}
+              <p className="note">手机上可以直接长按下面的图片保存到相册。</p>
+              <div style={{ maxHeight: "55vh", overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12 }}>
+                <img src={result.url} alt="日志长图预览" style={{ width: "100%", display: "block" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={save}>
+                  保存图片
+                </button>
+                <button className="btn btn-ghost" onClick={() => replaceResult(null)}>
+                  重新选择
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function WeddingLog({ state }) {
   const [draft, setDraft] = useState("");
   const [zoomSrc, setZoomSrc] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const profiles = useProfiles();
   const listRef = useRef(null);
 
@@ -3377,7 +3520,14 @@ function WeddingLog({ state }) {
         <div className="section">
           <div className="section-head">
             <h2>日志</h2>
-            <span className="meta">一行一条，记下今天完成了什么</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span className="meta">一行一条，记下今天完成了什么</span>
+              {sorted.length > 0 && (
+                <button className="btn btn-ghost" onClick={() => setExportOpen(true)}>
+                  <Icon name="image" size={13} /> 导出长图
+                </button>
+              )}
+            </span>
           </div>
           <div className="loglist" ref={listRef}>
             {sorted.length === 0 && <div className="empty-state">还没有日志，在下面写第一条吧</div>}
@@ -3442,6 +3592,7 @@ function WeddingLog({ state }) {
           <img src={zoomSrc} style={{ maxWidth: "100%", maxHeight: "88vh", borderRadius: 14, boxShadow: "0 20px 60px rgba(74,43,51,.4)" }} />
         </div>
       )}
+      <ExportLogModal open={exportOpen} onClose={() => setExportOpen(false)} entries={sorted} />
     </>
   );
 }

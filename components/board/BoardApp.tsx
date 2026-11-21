@@ -3316,6 +3316,20 @@ function offsetLabel(offsetMin) {
   const pad = (n) => String(n).padStart(2, "0");
   return `UTC${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
+// Friendlier names for the exported image only (meant for family/friends);
+// the 日志 page itself keeps the UTC-offset "log" look. Anything outside
+// these falls back to the raw offset.
+const TZ_NAMES = {
+  480: ["北京时间", "北京"],
+  [-480]: ["美西时间", "美西"],
+  [-420]: ["美西时间", "美西"],
+  [-300]: ["美东时间", "美东"],
+  [-240]: ["美东时间", "美东"],
+};
+function tzName(offsetMin, short = false) {
+  const n = TZ_NAMES[offsetMin];
+  return n ? n[short ? 1 : 0] : offsetLabel(offsetMin);
+}
 // The wall-clock date/time an instant reads as under a fixed UTC offset.
 function getWallClock(createdAtIso, offsetMin) {
   const shifted = new Date(new Date(createdAtIso).getTime() + offsetMin * 60000);
@@ -3373,12 +3387,13 @@ function ExportLogModal({ open, onClose, entries }) {
       const { blob, missingPhotos } = await renderLogImage(
         chosen.map((e) => {
           const full = formatLogStamp(e.created_at, e.tz_offset_min);
-          return { stamp: sharedTz ? full.slice(0, 16) : full, content: e.content, photoUrl: e.photo_url };
+          const dt = full.slice(0, 16);
+          return { stamp: sharedTz ? dt : `${dt} ${tzName(e.tz_offset_min, true)}`, content: e.content, photoUrl: e.photo_url };
         }),
         {
           withPhotos: withPhotos && hasPhotos,
           title: "H.S. & C.H. · 日志",
-          subtitle: `${range} · 共 ${chosen.length} 条${sharedTz && first ? ` · ${offsetLabel(first.tz_offset_min)}` : ""}`,
+          subtitle: `${range} · 共 ${chosen.length} 条${sharedTz && first ? ` · ${tzName(first.tz_offset_min)}` : ""}`,
           footer: `Wedding Workbook · 导出于 ${today}`,
         }
       );

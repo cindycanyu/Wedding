@@ -298,6 +298,14 @@ function parseICSEvents(text) {
     .filter((e) => e.summary)
     .map((e) => ({ summary: e.summary, description: e.description || "", date: icsDateToISO(e.dtstart) }));
 }
+// Optimistic updates otherwise fail silently: the item shows up, then the
+// next realtime reload pulls the DB's real state and it quietly vanishes.
+// A check-constraint violation (23514) almost always means schema.sql
+// hasn't been re-run since a new status/option was added.
+function alertSaveFailed(error) {
+  const hint = error?.code === "23514" ? "\n\n数据库还不认识这个新选项，需要先在 Supabase 重新运行一遍 schema.sql。" : "";
+  window.alert(`保存失败了，刚才的修改没有存进数据库。${hint}\n\n（${error?.message || "未知错误"}）`);
+}
 // Whether a task/daily row gets the purple-red alert treatment — the whole
 // row, not just the countdown badge (which keeps its own red styling).
 function isDeadlineAlert(deadline, done) {
@@ -4321,7 +4329,12 @@ export default function BoardApp({ me: initialMe }) {
     if (!requireAuth()) return;
     const item = inventory.find((i) => i.id === id);
     setInventory((is) => is.map((i) => (i.id === id ? { ...i, ...patch } : i)));
-    await supabase.from("inventory_items").update(patch).eq("id", id);
+    const { error } = await supabase.from("inventory_items").update(patch).eq("id", id);
+    if (error) {
+      if (item) setInventory((is) => is.map((i) => (i.id === id ? item : i)));
+      alertSaveFailed(error);
+      return;
+    }
     // Mirror privacy onto whichever look/accessory this item is linked to —
     // they're the same thing, so hiding one hides both.
     if ("is_private" in patch && item) {
@@ -4364,7 +4377,12 @@ export default function BoardApp({ me: initialMe }) {
       look_id: lookId, is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, row]);
-    await supabase.from("inventory_items").insert(row);
+    const { error } = await supabase.from("inventory_items").insert(row);
+    if (error) {
+      setInventory((is) => is.filter((i) => i.id !== id));
+      alertSaveFailed(error);
+      return;
+    }
     logActivity(`添加了物品「${name}」${lookId ? "（同时创建了造型候选）" : ""}`);
   };
   const deleteInventoryItem = async (id) => {

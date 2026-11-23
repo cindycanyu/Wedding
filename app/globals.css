@@ -13,6 +13,7 @@
   --line:#EADCDF;
   --good:#7E9473;
   --pending:#D1A054;
+  --shipping:#6F8FAF;
   --neutral2:#9C86A0;
   --reserve:#DCCFC0;
   --critical:#9B3B46;
@@ -136,6 +137,8 @@ a{color:var(--rose-dark);}
 .badge.tbd{background:var(--neutral2);}
 .badge.purchased{background:var(--good);}
 .badge.to_buy{background:var(--neutral2);}
+.badge.shipping{background:var(--shipping);}
+.badge.pending{background:var(--pending);}
 .badge.rush{background:var(--critical);}
 
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--cream);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:500;color:var(--plum-soft);}

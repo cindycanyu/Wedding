@@ -159,6 +159,15 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M21 16l-5.5-5.5L5 21" />
         </svg>
       );
+    case "truck":
+      return (
+        <svg {...common}>
+          <path d="M3 6h11v10H3z" />
+          <path d="M14 9h4l3 3v4h-7" />
+          <circle cx="7" cy="17.5" r="1.8" />
+          <circle cx="17" cy="17.5" r="1.8" />
+        </svg>
+      );
     case "edit":
       return (
         <svg {...common}>
@@ -180,12 +189,14 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
       return null;
   }
 }
+// Order here is the order of the filter chips and the status dropdown.
 const STATUS_META = {
   pending: { label: "选择中", color: "var(--pending)" },
   to_buy: { label: "待购买", color: "var(--neutral2)" },
+  shipping: { label: "运送中", color: "var(--shipping)" },
   purchased: { label: "已购买", color: "var(--good)" },
 };
-const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart" };
+const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart", shipping: "truck" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
 const VALID_TABS = new Set(["overview", "tasks", "inventory", "lookbook", "runofshow", "vendors", "daily", "log"]);
 // Shared by Tasks and Daily: done always sinks to the bottom regardless of
@@ -1475,7 +1486,7 @@ function Drawer({ selected, onClose, state }) {
             仅自己可见（惊喜款，对方暂时看不到）
           </label>
         </div>
-        {it.status !== "purchased" && (
+        {it.status !== "purchased" && it.status !== "shipping" && (
           <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
         )}
         {state.me && it.status === "to_buy" && (
@@ -2146,7 +2157,7 @@ function Topbar({ tab, setTab, me, onSignOut, onToggleActivity, onToggleChat, ha
 /* ============ Overview page ============ */
 function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
   const invCounts = useMemo(() => {
-    const c = { pending: 0, to_buy: 0, purchased: 0 };
+    const c = { pending: 0, to_buy: 0, shipping: 0, purchased: 0 };
     state.inventory.forEach((i) => c[i.status]++);
     return c;
   }, [state.inventory]);

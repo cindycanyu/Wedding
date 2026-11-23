@@ -169,7 +169,7 @@ create table if not exists public.tryon_results (
 create table if not exists public.inventory_items (
   id text primary key,
   name text not null,
-  status text not null default 'to_buy' check (status in ('pending','to_buy','purchased')),
+  status text not null default 'to_buy' check (status in ('pending','to_buy','shipping','purchased')),
   price_usd numeric not null default 0,
   occasions text[] not null default '{}',
   channel text not null default '',
@@ -196,7 +196,7 @@ alter table public.inventory_items alter column owner set not null;
 alter table public.inventory_items drop constraint if exists inventory_items_owner_check;
 alter table public.inventory_items add constraint inventory_items_owner_check check (owner in ('hs','ch'));
 alter table public.inventory_items drop constraint if exists inventory_items_status_check;
-alter table public.inventory_items add constraint inventory_items_status_check check (status in ('pending','to_buy','purchased'));
+alter table public.inventory_items add constraint inventory_items_status_check check (status in ('pending','to_buy','shipping','purchased'));
 
 create table if not exists public.inventory_photos (
   id uuid primary key default gen_random_uuid(),

@@ -194,7 +194,7 @@ const STATUS_META = {
   pending: { label: "选择中", color: "var(--pending)" },
   to_buy: { label: "待购买", color: "var(--neutral2)" },
   shipping: { label: "运送中", color: "var(--shipping)" },
-  purchased: { label: "已购买", color: "var(--good)" },
+  purchased: { label: "已到手", color: "var(--good)" },
 };
 const STATUS_ICON = { pending: "question", purchased: "check", to_buy: "cart", shipping: "truck" };
 const TASK_STATUS = { todo: "待处理", doing: "进行中", done: "已完成" };
@@ -1495,7 +1495,7 @@ function Drawer({ selected, onClose, state }) {
           </label>
         </div>
         {it.status !== "purchased" && it.status !== "shipping" && (
-          <p className="note">提示：该物品尚未标记为「已购买」，因此不计入已确认支出预算。</p>
+          <p className="note">提示：该物品还没付款（不是「运送中」或「已到手」），因此不计入已确认支出预算。</p>
         )}
         {state.me && it.status === "to_buy" && (
           <button
@@ -2878,7 +2878,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
       <div className="section">
         <div className="section-head">
           <h2>物品与资产清单</h2>
-          <span className="meta">未确认购买的物品不计入已购预算</span>
+          <span className="meta">还没付款的物品不计入已购预算</span>
         </div>
         <div className="filterbar">
           <MultiSelectBar me={state.me} selMode={selMode} count={selected.size} onToggleMode={toggleMode} onDelete={bulkDelete} />

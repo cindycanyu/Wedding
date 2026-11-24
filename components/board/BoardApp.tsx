@@ -3638,13 +3638,57 @@ function WeddingLog({ state }) {
 }
 
 /* ============ Run of Show page ============ */
+// time_label is free text ("09:30", "9点半", "下午3点", "3:30 PM",
+// "14:00-15:00"…), so pull the first clock time out of it to sort by.
+// Returns minutes since midnight, or null when there's no time in it
+// (e.g. "时间待定"), and those sort after every timed node.
+function parseTimeLabel(label) {
+  const s = String(label || "").replace(/：/g, ":").trim();
+  if (!s) return null;
+  const m = s.match(/(\d{1,2})\s*(?::\s*(\d{2})|点\s*(半|\d{1,2})?|时\s*(\d{1,2})?|\.(\d{2})(?!\d))?\s*(am|pm|a\.m\.|p\.m\.)?/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const minStr = m[2] ?? m[4] ?? m[5] ?? (m[3] && m[3] !== "半" ? m[3] : null);
+  let min = m[3] === "半" ? 30 : Number(minStr || 0);
+  // A bare number with no colon/点/am-pm ("第2场") isn't a time.
+  if (m[2] == null && m[5] == null && !/[点时]/.test(m[0]) && !m[6]) return null;
+  if (h > 24 || min > 59) return null;
+  const before = s.slice(0, m.index);
+  const ampm = (m[6] || "").toLowerCase();
+  const isPM = ampm.startsWith("p") || /(下午|晚上|傍晚|晚)\s*$/.test(before);
+  const isAM = ampm.startsWith("a") || /(凌晨|早上|早晨|上午|清晨)\s*$/.test(before);
+  const isNoon = /中午\s*$/.test(before);
+  if (isPM && h < 12) h += 12;
+  else if (isNoon && h < 6) h += 12;
+  else if (isAM && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Date first (undated last), then clock time, then the manual sort_order
+// as the tie-breaker and for nodes whose time can't be read.
+function compareNodes(a, b) {
+  if ((a.node_date || "") !== (b.node_date || "")) {
+    if (!a.node_date) return 1;
+    if (!b.node_date) return -1;
+    return a.node_date.localeCompare(b.node_date);
+  }
+  const ta = parseTimeLabel(a.time_label);
+  const tb = parseTimeLabel(b.time_label);
+  if (ta !== tb) {
+    if (ta == null) return 1;
+    if (tb == null) return -1;
+    return ta - tb;
+  }
+  return (a.sort_order || 0) - (b.sort_order || 0);
+}
+
 function RunOfShow({ state, evTab, setEvTab }) {
   const [addOpen, setAddOpen] = useState(false);
   const nodes = state.nodesByEvent[evTab] || [];
   const ev = state.events.find((e) => e.id === evTab);
 
   // Group into date buckets so a multi-day event reads as separate flows,
-  // each in sort_order (the manual within-day ordering already in place);
+  // each from early to late (nodesByEvent is already sorted by compareNodes);
   // undated nodes (the common case for a single-day event) get one bucket
   // with no header, same as before this feature existed.
   const groups = [];
@@ -4153,6 +4197,7 @@ export default function BoardApp({ me: initialMe }) {
   const nodesByEvent = useMemo(() => {
     const grouped = {};
     runOfShowNodes.forEach((n) => (grouped[n.event_id] ||= []).push(n));
+    Object.values(grouped).forEach((list) => list.sort(compareNodes));
     return grouped;
   }, [runOfShowNodes]);
   // Public-bucket URLs are pure string templating, no network call — fine

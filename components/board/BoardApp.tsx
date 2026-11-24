@@ -759,6 +759,48 @@ function TagEditor({ tags, onChange, events, suggestions = [] }) {
 // Used for every other "add" flow (looks, accessories, inventory, vendors,
 // run-of-show nodes) so creating something always means filling out the
 // whole form up front, not create-a-title-then-edit-later.
+// Stored in run_of_show_nodes.time_label as "09:30" or "09:30–10:15" so no
+// schema change is needed and old free-text labels still display. Older
+// labels ("下午3点到5点") are read back into the pickers via parseTimeLabel.
+function minutesToHHMM(m) {
+  if (m == null) return "";
+  return `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+function splitTimeLabel(label) {
+  const parts = String(label || "").split(/\s*(?:-|–|—|~|～|至|到)\s*/);
+  const start = parseTimeLabel(parts[0]);
+  let end = parts.length > 1 ? parseTimeLabel(parts.slice(1).join(" ")) : null;
+  // "下午3点到5点": the end inherits the afternoon from the start.
+  if (start != null && end != null && end < start && end + 720 > start) end += 720;
+  return { start: minutesToHHMM(start), end: start == null ? "" : minutesToHHMM(end) };
+}
+function TimeRangeField({ value, onChange, autoFocus }) {
+  const { start, end } = splitTimeLabel(value);
+  const legacy = value && !start ? value : null;
+  const emit = (s, e) => onChange(s ? (e ? `${s}–${e}` : s) : "");
+  return (
+    <>
+      <div className="time-range">
+        <input type="time" aria-label="开始时间" autoFocus={autoFocus} value={start} onChange={(e) => emit(e.target.value, end)} />
+        <span className="time-range-sep">至</span>
+        <input
+          type="time"
+          aria-label="结束时间（可选）"
+          value={end}
+          disabled={!start}
+          onChange={(e) => emit(start, e.target.value)}
+        />
+        {value && (
+          <button type="button" className="btn btn-ghost" onClick={() => onChange("")}>
+            清除
+          </button>
+        )}
+      </div>
+      {legacy && <p className="note" style={{ margin: "4px 0 0" }}>原来写的是「{legacy}」，选一个时间就会替换掉。</p>}
+    </>
+  );
+}
+
 function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
   const [values, setValues] = useState({});
   useEffect(() => {
@@ -847,6 +889,14 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
                 <div className="field" key={f.key}>
                   <label>{f.label}</label>
                   <NumberField value={v} onCommit={(n) => set(f.key, n)} autoFocus={f.autoFocus} />
+                </div>
+              );
+            }
+            if (f.type === "time") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <TimeRangeField value={v ?? ""} autoFocus={f.autoFocus} onChange={(t) => set(f.key, t)} />
                 </div>
               );
             }
@@ -1585,15 +1635,13 @@ function Drawer({ selected, onClose, state }) {
     sub = n.time_label;
     content = (
       <>
-        <div className="rowfields">
-          <div className="field">
-            <label>日期（可选）</label>
-            <input type="date" value={n.node_date || ""} onChange={(e) => state.updateNode(id, { node_date: e.target.value || null })} />
-          </div>
-          <div className="field">
-            <label>时间</label>
-            <DebouncedField value={n.time_label} onCommit={(v) => state.updateNode(id, { time_label: v })} />
-          </div>
+        <div className="field">
+          <label>日期（可选）</label>
+          <input type="date" value={n.node_date || ""} onChange={(e) => state.updateNode(id, { node_date: e.target.value || null })} />
+        </div>
+        <div className="field">
+          <label>时间（结束时间可不填）</label>
+          <TimeRangeField value={n.time_label} onChange={(v) => state.updateNode(id, { time_label: v })} />
         </div>
         <div className="field">
           <label>标题</label>
@@ -3768,7 +3816,7 @@ function RunOfShow({ state, evTab, setEvTab }) {
         fields={[
           { key: "title", label: "标题", required: true, autoFocus: true },
           { key: "node_date", label: "日期（可选，多天流程用来分组）", type: "date" },
-          { key: "time_label", label: "时间" },
+          { key: "time_label", label: "时间（结束时间可不填）", type: "time" },
           { key: "location", label: "地点" },
           { key: "notes", label: "执行细节 / 注意事项", type: "textarea" },
         ]}

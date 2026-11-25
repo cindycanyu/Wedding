@@ -775,12 +775,20 @@ function splitTimeLabel(label) {
   return { start: minutesToHHMM(start), end: start == null ? "" : minutesToHHMM(end) };
 }
 // What the timeline shows: the time as the sort order understands it, in
-// 24-hour form, so an old hand-typed "4:00" visibly reads as 04:00 (morning)
-// instead of silently sorting before 12:00 while looking like an afternoon.
+// 12-hour form ("4:00 PM"), so an old hand-typed "4:00" with no am/pm
+// visibly reads as 4:00 AM instead of silently sorting before noon.
+// Storage stays 24-hour "16:00" — this is display only.
+function to12h(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return { text: `${h % 12 || 12}:${String(m).padStart(2, "0")}`, period: h < 12 ? "AM" : "PM" };
+}
 function formatNodeTime(label) {
   const { start, end } = splitTimeLabel(label);
   if (!start) return label || "";
-  return end ? `${start}–${end}` : start;
+  const a = to12h(start);
+  if (!end) return `${a.text} ${a.period}`;
+  const b = to12h(end);
+  return a.period === b.period ? `${a.text}–${b.text} ${b.period}` : `${a.text} ${a.period}–${b.text} ${b.period}`;
 }
 function TimeRangeField({ value, onChange, autoFocus }) {
   const { start, end } = splitTimeLabel(value);
@@ -3720,13 +3728,24 @@ function parseTimeLabel(label) {
   return h * 60 + min;
 }
 
-// Date first (undated last), then clock time, then the manual sort_order
+// The day a node belongs to for grouping/sorting. A node left without a
+// date joins the event's only date when the event has exactly one — so
+// forgetting the optional date on one node doesn't push it to the bottom
+// as a separate, header-less group under everything else.
+function nodeDayFn(list) {
+  const dates = [...new Set(list.map((n) => n.node_date).filter(Boolean))];
+  return (n) => n.node_date || (dates.length === 1 ? dates[0] : null);
+}
+
+// Day first (undated last), then clock time, then the manual sort_order
 // as the tie-breaker and for nodes whose time can't be read.
-function compareNodes(a, b) {
-  if ((a.node_date || "") !== (b.node_date || "")) {
-    if (!a.node_date) return 1;
-    if (!b.node_date) return -1;
-    return a.node_date.localeCompare(b.node_date);
+function compareNodes(a, b, day = (n) => n.node_date) {
+  const da = day(a) || "";
+  const db = day(b) || "";
+  if (da !== db) {
+    if (!da) return 1;
+    if (!db) return -1;
+    return da.localeCompare(db);
   }
   const ta = parseTimeLabel(a.time_label);
   const tb = parseTimeLabel(b.time_label);
@@ -3747,12 +3766,13 @@ function RunOfShow({ state, evTab, setEvTab }) {
   // each from early to late (nodesByEvent is already sorted by compareNodes);
   // undated nodes (the common case for a single-day event) get one bucket
   // with no header, same as before this feature existed.
+  const day = nodeDayFn(nodes);
   const groups = [];
   for (const n of nodes) {
-    const key = n.node_date || "__undated";
+    const key = day(n) || "__undated";
     let g = groups.find((g) => g.key === key);
     if (!g) {
-      g = { key, date: n.node_date, items: [] };
+      g = { key, date: day(n), items: [] };
       groups.push(g);
     }
     g.items.push(n);
@@ -3790,11 +3810,18 @@ function RunOfShow({ state, evTab, setEvTab }) {
             const fd = formatNodeDate(g.date);
             return (
               <div key={g.key} className="rosday">
-                {fd && (
+                {fd ? (
                   <div className="rosday-head">
                     <span className="d1">{fd.label}</span>
                     <span className="d2">{fd.weekday}</span>
                   </div>
+                ) : (
+                  groups.length > 1 && (
+                    <div className="rosday-head">
+                      <span className="d1">未设日期</span>
+                      <span className="d2">点开环节补上日期</span>
+                    </div>
+                  )
                 )}
                 <div className="timeline">
                   {g.items.map((n) => (
@@ -3820,6 +3847,7 @@ function RunOfShow({ state, evTab, setEvTab }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title={`添加环节 · ${ev?.name || ""}`}
+        initialValues={{ node_date: groups.find((g) => g.date)?.date && groups.filter((g) => g.date).length === 1 ? groups.find((g) => g.date).date : undefined }}
         onCreate={(values) => state.addNode(evTab, values)}
         fields={[
           { key: "title", label: "标题", required: true, autoFocus: true },
@@ -4253,7 +4281,10 @@ export default function BoardApp({ me: initialMe }) {
   const nodesByEvent = useMemo(() => {
     const grouped = {};
     runOfShowNodes.forEach((n) => (grouped[n.event_id] ||= []).push(n));
-    Object.values(grouped).forEach((list) => list.sort(compareNodes));
+    Object.values(grouped).forEach((list) => {
+      const day = nodeDayFn(list);
+      list.sort((a, b) => compareNodes(a, b, day));
+    });
     return grouped;
   }, [runOfShowNodes]);
   // Public-bucket URLs are pure string templating, no network call — fine

@@ -329,12 +329,81 @@ function normalizeShopLink(raw) {
 function isOpenableLink(v) {
   return /^https?:\/\//i.test(String(v || ""));
 }
+// Friendly shop name for a link's button ("淘宝" rather than "m.tb.cn").
+const SHOP_NAMES = [
+  [/(^|\.)(taobao\.com|tb\.cn)$/, "淘宝"],
+  [/(^|\.)(tmall\.com|tmall\.hk)$/, "天猫"],
+  [/(^|\.)(jd\.com|3\.cn)$/, "京东"],
+  [/(^|\.)(pinduoduo\.com|yangkeduo\.com)$/, "拼多多"],
+  [/(^|\.)(xiaohongshu\.com|xhslink\.com)$/, "小红书"],
+  [/(^|\.)(amazon\.[a-z.]+|amzn\.to|a\.co)$/, "Amazon"],
+  [/(^|\.)etsy\.com$/, "Etsy"],
+];
 function linkHost(v) {
   try {
-    return new URL(v).hostname.replace(/^www\./, "");
+    const host = new URL(v).hostname.replace(/^www\./, "");
+    return SHOP_NAMES.find(([re]) => re.test(host))?.[1] || host;
   } catch {
     return "";
   }
+}
+
+// Editable list of purchase links: each saved link can be edited, opened
+// or removed, and a blank row at the bottom adds another (Enter or blur).
+function LinksEditor({ links, onChange }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const l = normalizeShopLink(draft);
+    if (!l) return;
+    onChange([...links, l]);
+    setDraft("");
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {links.map((l, i) => (
+        <div key={i}>
+          <div className="link-row">
+            <DebouncedField
+              inputMode="url"
+              value={l}
+              onCommit={(v) => {
+                const n = normalizeShopLink(v);
+                if (n === l) return;
+                onChange(n ? links.map((x, j) => (j === i ? n : x)) : links.filter((_, j) => j !== i));
+              }}
+            />
+            {isOpenableLink(l) && (
+              <a className="btn btn-primary" href={l} target="_blank" rel="noopener noreferrer">
+                <Icon name="link" size={13} color="#fff" /> {linkHost(l) || "打开"}
+              </a>
+            )}
+            <button type="button" className="btn btn-ghost" aria-label="删除这个链接" onClick={() => onChange(links.filter((_, j) => j !== i))}>
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+          {!isOpenableLink(l) && <p className="note" style={{ margin: "4px 0 0" }}>这看起来不是网址，打不开。请粘贴以 http 开头的链接。</p>}
+        </div>
+      ))}
+      <div className="link-row">
+        <input
+          inputMode="url"
+          placeholder={links.length ? "再加一个链接" : "粘贴商品链接（淘宝分享文字也可以）"}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={add}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button type="button" className="btn btn-ghost" disabled={!draft.trim()} onClick={add}>
+          <Icon name="plus" size={13} /> 添加
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function alertSaveFailed(error) {
@@ -945,6 +1014,14 @@ function FormModal({ open, onClose, onCreate, title, fields, initialValues }) {
                 <div className="field" key={f.key}>
                   <label>{f.label}</label>
                   <NumberField value={v} onCommit={(n) => set(f.key, n)} autoFocus={f.autoFocus} />
+                </div>
+              );
+            }
+            if (f.type === "links") {
+              return (
+                <div className="field" key={f.key}>
+                  <label>{f.label}</label>
+                  <LinksEditor links={v || []} onChange={(l) => set(f.key, l)} />
                 </div>
               );
             }
@@ -1571,26 +1648,8 @@ function Drawer({ selected, onClose, state }) {
           <DebouncedField value={it.channel} onCommit={(v) => state.updateInventory(id, { channel: v })} />
         </div>
         <div className="field">
-          <label>购买链接</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <DebouncedField
-              type="url"
-              inputMode="url"
-              placeholder="粘贴商品链接（淘宝分享文字也可以）"
-              style={{ flex: 1, minWidth: 0 }}
-              value={it.link || ""}
-              onCommit={(v) => {
-                const link = normalizeShopLink(v);
-                if (link !== (it.link || "")) state.updateInventory(id, { link });
-              }}
-            />
-            {isOpenableLink(it.link) && (
-              <a className="btn btn-primary" href={it.link} target="_blank" rel="noopener noreferrer" style={{ flex: "none" }}>
-                <Icon name="link" size={13} color="#fff" /> 打开
-              </a>
-            )}
-          </div>
-          {it.link && !isOpenableLink(it.link) && <p className="note" style={{ margin: "4px 0 0" }}>这看起来不是网址，打不开。请粘贴以 http 开头的链接。</p>}
+          <label>购买链接（可以加多个）</label>
+          <LinksEditor links={it.links || []} onChange={(links) => state.updateInventory(id, { links })} />
         </div>
         <div className="field">
           <label>跨场合复用计划</label>
@@ -3095,17 +3154,22 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
                         )}
                       </span>
                     </div>
-                    {isOpenableLink(it.link) && !selMode && (
-                      <a
-                        className="shop-link"
-                        href={it.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <Icon name="link" size={12} /> 去购买{linkHost(it.link) ? ` · ${linkHost(it.link)}` : ""}
-                      </a>
+                    {!selMode && (it.links || []).some(isOpenableLink) && (
+                      <div className="shop-links">
+                        {it.links.filter(isOpenableLink).map((l, i) => (
+                          <a
+                            key={i}
+                            className="shop-link"
+                            href={l}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <Icon name="link" size={11} /> {linkHost(l) || "去购买"}
+                          </a>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3128,7 +3192,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           { key: "status", label: "状态", type: "select", options: Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label })) },
           { key: "price_usd", label: "价格 (USD)", type: "number" },
           { key: "channel", label: "购买渠道" },
-          { key: "link", label: "购买链接（可选）" },
+          { key: "links", label: "购买链接（可选，可以加多个）", type: "links" },
           { key: "occasions", label: "跨场合复用计划", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
           { key: "notes", label: "备注", type: "textarea" },
           { key: "is_private", label: "仅自己可见（惊喜款，对方暂时看不到）", type: "checkbox" },
@@ -4562,7 +4626,7 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
-  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, link, notes, create_look, wearer, look_shape, is_private }) => {
+  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, links, notes, create_look, wearer, look_shape, is_private }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
     let lookId = null;
@@ -4581,7 +4645,7 @@ export default function BoardApp({ me: initialMe }) {
     const row = {
       id, name, status: status || "to_buy", price_usd: price_usd || 0,
       occasions: occasions || [], channel: channel || "", added_by: me.member_key, notes: notes || "",
-      ...(link?.trim() ? { link: normalizeShopLink(link) } : {}),
+      ...(links?.length ? { links } : {}),
       look_id: lookId, is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, row]);

@@ -35,6 +35,9 @@ export const metadata: Metadata = {
   // The site is readable by anyone with the link, but it's not meant to be
   // discoverable — tell every search engine not to index or crawl it.
   robots: { index: false, follow: false },
+  // iOS "添加到主屏幕": open full-screen like an app, with this name under
+  // the icon. (The icon itself comes from app/apple-icon.png.)
+  appleWebApp: { capable: true, title: "婚礼筹备", statusBarStyle: "default" },
 };
 
 // Without this, iOS Safari keeps fixed-position elements (the 留言/所有抽屉)
@@ -45,6 +48,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   interactiveWidget: "resizes-content",
+  themeColor: "#FBF0F3",
 };
 
 export default function RootLayout({

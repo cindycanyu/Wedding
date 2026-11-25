@@ -173,6 +173,7 @@ create table if not exists public.inventory_items (
   price_usd numeric not null default 0,
   occasions text[] not null default '{}',
   channel text not null default '',
+  link text not null default '',         -- product page URL, shown as a "去购买" button
   added_by text check (added_by in ('hs','ch')),
   notes text not null default '',
   look_id text references public.looks (id) on delete set null,
@@ -184,6 +185,7 @@ create table if not exists public.inventory_items (
 
 -- These only do something on a project that already had this table before
 -- "pending", look_id or accessory_id existed; harmless no-ops on a fresh one.
+alter table public.inventory_items add column if not exists link text not null default '';
 alter table public.inventory_items add column if not exists look_id text references public.looks (id) on delete set null;
 alter table public.inventory_items add column if not exists accessory_id text references public.accessories (id) on delete set null;
 -- A private look's linked inventory row mirrors its privacy so the surprise

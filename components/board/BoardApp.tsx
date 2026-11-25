@@ -159,6 +159,14 @@ function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) {
           <path d="M21 16l-5.5-5.5L5 21" />
         </svg>
       );
+    case "link":
+      return (
+        <svg {...common}>
+          <path d="M14 4h6v6" />
+          <path d="M20 4l-9 9" />
+          <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+        </svg>
+      );
     case "truck":
       return (
         <svg {...common}>
@@ -302,8 +310,40 @@ function parseICSEvents(text) {
 // next realtime reload pulls the DB's real state and it quietly vanishes.
 // A check-constraint violation (23514) almost always means schema.sql
 // hasn't been re-run since a new status/option was added.
+// Shopping links are often pasted straight from a share sheet, e.g.
+// "【淘宝】… https://m.tb.cn/h.xxx 点击链接…" — keep just the URL. A bare
+// "amazon.com/…" gets https:// added. Anything that isn't http(s) is
+// rejected so a stored value can never become a javascript: link.
+function normalizeShopLink(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  const found = t.match(/https?:\/\/[^\s，。、“”"'<>【】]+/i);
+  let url = found ? found[0] : /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(t) ? "https://" + t : t;
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : t;
+  } catch {
+    return t;
+  }
+}
+function isOpenableLink(v) {
+  return /^https?:\/\//i.test(String(v || ""));
+}
+function linkHost(v) {
+  try {
+    return new URL(v).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 function alertSaveFailed(error) {
-  const hint = error?.code === "23514" ? "\n\n数据库还不认识这个新选项，需要先在 Supabase 重新运行一遍 schema.sql。" : "";
+  const hint =
+    error?.code === "23514"
+      ? "\n\n数据库还不认识这个新选项，需要先在 Supabase 重新运行一遍 schema.sql。"
+      : error?.code === "PGRST204" || error?.code === "42703"
+      ? "\n\n数据库里还没有这个新栏位，需要先在 Supabase 重新运行一遍 schema.sql。"
+      : "";
   window.alert(`保存失败了，刚才的修改没有存进数据库。${hint}\n\n（${error?.message || "未知错误"}）`);
 }
 // Whether a task/daily row gets the purple-red alert treatment — the whole
@@ -1529,6 +1569,28 @@ function Drawer({ selected, onClose, state }) {
         <div className="field">
           <label>购买渠道</label>
           <DebouncedField value={it.channel} onCommit={(v) => state.updateInventory(id, { channel: v })} />
+        </div>
+        <div className="field">
+          <label>购买链接</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <DebouncedField
+              type="url"
+              inputMode="url"
+              placeholder="粘贴商品链接（淘宝分享文字也可以）"
+              style={{ flex: 1, minWidth: 0 }}
+              value={it.link || ""}
+              onCommit={(v) => {
+                const link = normalizeShopLink(v);
+                if (link !== (it.link || "")) state.updateInventory(id, { link });
+              }}
+            />
+            {isOpenableLink(it.link) && (
+              <a className="btn btn-primary" href={it.link} target="_blank" rel="noopener noreferrer" style={{ flex: "none" }}>
+                <Icon name="link" size={13} color="#fff" /> 打开
+              </a>
+            )}
+          </div>
+          {it.link && !isOpenableLink(it.link) && <p className="note" style={{ margin: "4px 0 0" }}>这看起来不是网址，打不开。请粘贴以 http 开头的链接。</p>}
         </div>
         <div className="field">
           <label>跨场合复用计划</label>
@@ -3033,6 +3095,18 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
                         )}
                       </span>
                     </div>
+                    {isOpenableLink(it.link) && !selMode && (
+                      <a
+                        className="shop-link"
+                        href={it.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <Icon name="link" size={12} /> 去购买{linkHost(it.link) ? ` · ${linkHost(it.link)}` : ""}
+                      </a>
+                    )}
                   </div>
                 </div>
               );
@@ -3054,6 +3128,7 @@ function Inventory({ state, invFilter, setInvFilter, initialEventFilter }) {
           { key: "status", label: "状态", type: "select", options: Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label })) },
           { key: "price_usd", label: "价格 (USD)", type: "number" },
           { key: "channel", label: "购买渠道" },
+          { key: "link", label: "购买链接（可选）" },
           { key: "occasions", label: "跨场合复用计划", type: "chips", options: state.events.map((ev) => ({ value: ev.id, label: ev.en })) },
           { key: "notes", label: "备注", type: "textarea" },
           { key: "is_private", label: "仅自己可见（惊喜款，对方暂时看不到）", type: "checkbox" },
@@ -4487,7 +4562,7 @@ export default function BoardApp({ me: initialMe }) {
     const occasions = has ? item.occasions.filter((o) => o !== evId) : [...item.occasions, evId];
     await updateInventory(id, { occasions });
   };
-  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, notes, create_look, wearer, look_shape, is_private }) => {
+  const addInventoryItem = async ({ name, status, price_usd, occasions, channel, link, notes, create_look, wearer, look_shape, is_private }) => {
     if (!requireAuth()) return;
     const id = crypto.randomUUID();
     let lookId = null;
@@ -4506,6 +4581,7 @@ export default function BoardApp({ me: initialMe }) {
     const row = {
       id, name, status: status || "to_buy", price_usd: price_usd || 0,
       occasions: occasions || [], channel: channel || "", added_by: me.member_key, notes: notes || "",
+      ...(link?.trim() ? { link: normalizeShopLink(link) } : {}),
       look_id: lookId, is_private: !!is_private, owner: me.member_key,
     };
     setInventory((is) => [...is, row]);

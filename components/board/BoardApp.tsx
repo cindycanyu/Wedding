@@ -774,6 +774,14 @@ function splitTimeLabel(label) {
   if (start != null && end != null && end < start && end + 720 > start) end += 720;
   return { start: minutesToHHMM(start), end: start == null ? "" : minutesToHHMM(end) };
 }
+// What the timeline shows: the time as the sort order understands it, in
+// 24-hour form, so an old hand-typed "4:00" visibly reads as 04:00 (morning)
+// instead of silently sorting before 12:00 while looking like an afternoon.
+function formatNodeTime(label) {
+  const { start, end } = splitTimeLabel(label);
+  if (!start) return label || "";
+  return end ? `${start}–${end}` : start;
+}
 function TimeRangeField({ value, onChange, autoFocus }) {
   const { start, end } = splitTimeLabel(value);
   const legacy = value && !start ? value : null;
@@ -1632,7 +1640,7 @@ function Drawer({ selected, onClose, state }) {
   if (type === "node") {
     const n = state.runOfShowNodes.find((x) => x.id === id);
     title = n.title;
-    sub = n.time_label;
+    sub = formatNodeTime(n.time_label);
     content = (
       <>
         <div className="field">
@@ -2338,7 +2346,7 @@ function Overview({ state, setTab, setInvFilter, goToRunOfShow }) {
                     <div className="card-title">{ev.name}</div>
                   </div>
                   <div className="card-sub tabular">
-                    {first ? `${first.time_label} · ${first.title}` : "日程待添加"}
+                    {first ? `${formatNodeTime(first.time_label) || "时间待定"} · ${first.title}` : "日程待添加"}
                     {ev.status === "tbd" ? "（草稿）" : ""}
                   </div>
                   <div className="card-sub">共 {nodes.length} 个环节</div>
@@ -3795,7 +3803,7 @@ function RunOfShow({ state, evTab, setEvTab }) {
                         <Icon name="pin" size={13} color="#fff" />
                       </span>
                       <div className="card2">
-                        <div className="time tabular">{n.time_label || "时间待定"}</div>
+                        <div className="time tabular">{formatNodeTime(n.time_label) || "时间待定"}</div>
                         <div className="ttl">{n.title}</div>
                         {n.location && <div className="loc">{n.location}</div>}
                       </div>
